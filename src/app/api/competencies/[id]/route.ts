@@ -6,6 +6,8 @@ import { deleteCompetency, getCompetency, updateCompetency } from "@/lib/db/repo
 import { serializeCompetency } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
 
+export const dynamic = "force-dynamic";
+
 interface Params {
   params: Promise<{ id: string }>;
 }
@@ -16,15 +18,15 @@ export async function PATCH(request: Request, { params }: Params) {
   if (!user) return unauthorized();
   if (!canManageReferenceData(toActorContext(user))) return forbidden();
 
-  const existing = getCompetency(id);
+  const existing = await getCompetency(id);
   if (!existing) return notFound("Компетенция не найдена");
 
   const body = await request.json().catch(() => null);
   const parsed = updateCompetencySchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const updated = updateCompetency(id, parsed.data);
-  logActivity({
+  const updated = await updateCompetency(id, parsed.data);
+  await logActivity({
     actorId: user.id,
     action: "competency.updated",
     entityType: "competency",
@@ -39,11 +41,11 @@ export async function DELETE(_request: Request, { params }: Params) {
   if (!user) return unauthorized();
   if (!canManageReferenceData(toActorContext(user))) return forbidden();
 
-  const existing = getCompetency(id);
+  const existing = await getCompetency(id);
   if (!existing) return notFound("Компетенция не найдена");
 
-  deleteCompetency(id);
-  logActivity({
+  await deleteCompetency(id);
+  await logActivity({
     actorId: user.id,
     action: "competency.deleted",
     entityType: "competency",

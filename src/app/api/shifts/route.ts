@@ -6,8 +6,10 @@ import { createShift, listShifts } from "@/lib/db/repo/shifts";
 import { serializeShift } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
-  return ok(listShifts().map(serializeShift));
+  return ok((await listShifts()).map(serializeShift));
 }
 
 export async function POST(request: Request) {
@@ -19,8 +21,8 @@ export async function POST(request: Request) {
   const parsed = createShiftSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const shift = createShift(parsed.data);
-  logActivity({
+  const shift = await createShift(parsed.data);
+  await logActivity({
     actorId: user.id,
     action: "shift.created",
     entityType: "shift",

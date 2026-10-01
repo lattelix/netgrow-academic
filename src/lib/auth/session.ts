@@ -8,7 +8,7 @@ export async function getCurrentUser(): Promise<UserWithRole | null> {
   const store = await cookies();
   const userId = store.get(SESSION_COOKIE)?.value;
   if (!userId) return null;
-  return getUserById(userId) ?? null;
+  return (await getUserById(userId)) ?? null;
 }
 
 export function toActorContext(user: UserWithRole): ActorContext {

@@ -4,6 +4,8 @@ import { listUsers } from "@/lib/db/repo/users";
 import { serializeUser } from "@/lib/api/serialize";
 import type { RoleCode } from "@/lib/db/types";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
@@ -12,7 +14,7 @@ export async function GET(request: Request) {
   const roleCode = searchParams.get("role") as RoleCode | null;
   const shiftId = searchParams.get("shiftId");
 
-  const users = listUsers({
+  const users = await listUsers({
     roleCode: roleCode ?? undefined,
     shiftId: shiftId ?? undefined,
   });

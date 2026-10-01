@@ -13,6 +13,8 @@ import { serializeProject } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
 import type { ProjectAgeGroup, ProjectStatus } from "@/lib/db/types";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const filter: ProjectFilter = {
@@ -25,7 +27,7 @@ export async function GET(request: Request) {
   const competencyIds = searchParams.getAll("competencyId");
   if (competencyIds.length > 0) filter.competencyIds = competencyIds;
 
-  const projects = listProjects(filter);
+  const projects = await listProjects(filter);
   return ok(projects.map(serializeProject));
 }
 
@@ -39,7 +41,7 @@ export async function POST(request: Request) {
   const parsed = createProjectSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const project = createProject({
+  const project = await createProject({
     title: parsed.data.title,
     description: parsed.data.description,
     direction: parsed.data.direction,
@@ -50,10 +52,10 @@ export async function POST(request: Request) {
     status: parsed.data.status,
   });
   if (parsed.data.competencies.length > 0) {
-    setProjectCompetencies(project.id, parsed.data.competencies);
+    await setProjectCompetencies(project.id, parsed.data.competencies);
   }
 
-  logActivity({
+  await logActivity({
     actorId: user.id,
     action: "project.created",
     entityType: "project",
@@ -61,6 +63,6 @@ export async function POST(request: Request) {
     metadata: { title: project.title },
   });
 
-  const full = getProject(project.id);
+  const full = await getProject(project.id);
   return ok(full ? serializeProject(full) : project, 201);
 }

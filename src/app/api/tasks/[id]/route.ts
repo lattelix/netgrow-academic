@@ -8,6 +8,8 @@ import { getProject } from "@/lib/db/repo/projects";
 import { serializeTask } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
 
+export const dynamic = "force-dynamic";
+
 interface Params {
   params: Promise<{ id: string }>;
 }
@@ -17,11 +19,11 @@ export async function PATCH(request: Request, { params }: Params) {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
 
-  const task = getTask(id);
+  const task = await getTask(id);
   if (!task) return notFound("Задача не найдена");
-  const team = getTeam(task.team_id);
+  const team = await getTeam(task.team_id);
   if (!team) return notFound("Команда не найдена");
-  const project = getProject(team.project_id);
+  const project = await getProject(team.project_id);
   if (!project) return notFound("Проект не найден");
 
   const actor = toActorContext(user);
@@ -36,13 +38,13 @@ export async function PATCH(request: Request, { params }: Params) {
     return forbidden("Исполнитель может менять только статус задачи");
   }
 
-  if (parsed.data.assigneeId && !isTeamMember(team.id, parsed.data.assigneeId)) {
+  if (parsed.data.assigneeId && !(await isTeamMember(team.id, parsed.data.assigneeId))) {
     return badRequest("Исполнитель должен быть участником команды");
   }
 
-  updateTask(id, parsed.data);
+  await updateTask(id, parsed.data);
 
-  logActivity({
+  await logActivity({
     actorId: user.id,
     action: "task.updated",
     entityType: "task",
@@ -50,6 +52,6 @@ export async function PATCH(request: Request, { params }: Params) {
     metadata: { fields: Object.keys(parsed.data) },
   });
 
-  const [withDetails] = listTasksByTeam(team.id).filter((t) => t.id === id);
-  return ok(withDetails ? serializeTask(withDetails) : getTask(id));
+  const [withDetails] = (await listTasksByTeam(team.id)).filter((t) => t.id === id);
+  return ok(withDetails ? serializeTask(withDetails) : await getTask(id));
 }

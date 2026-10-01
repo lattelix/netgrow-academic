@@ -5,10 +5,12 @@ import { getCompetency, listUserCompetencies, upsertUserCompetency } from "@/lib
 import { serializeUserCompetency } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
-  return ok(listUserCompetencies(user.id).map(serializeUserCompetency));
+  return ok((await listUserCompetencies(user.id)).map(serializeUserCompetency));
 }
 
 export async function PUT(request: Request) {
@@ -19,11 +21,11 @@ export async function PUT(request: Request) {
   const parsed = upsertUserCompetencySchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const competency = getCompetency(parsed.data.competencyId);
+  const competency = await getCompetency(parsed.data.competencyId);
   if (!competency) return notFound("Компетенция не найдена");
 
-  upsertUserCompetency(user.id, parsed.data.competencyId, parsed.data.level);
-  logActivity({
+  await upsertUserCompetency(user.id, parsed.data.competencyId, parsed.data.level);
+  await logActivity({
     actorId: user.id,
     action: "profile.competency_updated",
     entityType: "user",
@@ -31,5 +33,5 @@ export async function PUT(request: Request) {
     metadata: { competencyId: parsed.data.competencyId, level: parsed.data.level },
   });
 
-  return ok(listUserCompetencies(user.id).map(serializeUserCompetency));
+  return ok((await listUserCompetencies(user.id)).map(serializeUserCompetency));
 }

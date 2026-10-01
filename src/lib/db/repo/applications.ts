@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/db/client";
+import { query, queryOne } from "@/lib/db/client";
 import { makeId, nowIso } from "@/lib/db/ids";
 import type { ApplicationRow, ApplicationStatus } from "@/lib/db/types";
 
@@ -21,46 +21,54 @@ export interface ApplicationFilter {
   organizerId?: string;
 }
 
-export function listApplications(filter: ApplicationFilter = {}): ApplicationWithDetails[] {
+export function listApplications(filter: ApplicationFilter = {}): Promise<ApplicationWithDetails[]> {
   const clauses: string[] = [];
-  const params: Record<string, unknown> = {};
+  const params: unknown[] = [];
   if (filter.projectId) {
-    clauses.push("a.project_id = @projectId");
-    params.projectId = filter.projectId;
+    params.push(filter.projectId);
+    clauses.push(`a.project_id = $${params.length}`);
   }
   if (filter.applicantId) {
-    clauses.push("a.applicant_id = @applicantId");
-    params.applicantId = filter.applicantId;
+    params.push(filter.applicantId);
+    clauses.push(`a.applicant_id = $${params.length}`);
   }
   if (filter.status) {
-    clauses.push("a.status = @status");
-    params.status = filter.status;
+    params.push(filter.status);
+    clauses.push(`a.status = $${params.length}`);
   }
   if (filter.organizerId) {
-    clauses.push("p.organizer_id = @organizerId");
-    params.organizerId = filter.organizerId;
+    params.push(filter.organizerId);
+    clauses.push(`p.organizer_id = $${params.length}`);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  return getDb()
-    .prepare(`${SELECT_BASE} ${where} ORDER BY a.created_at DESC`)
-    .all(params) as ApplicationWithDetails[];
+  return query<ApplicationWithDetails>(`${SELECT_BASE} ${where} ORDER BY a.created_at DESC`, params);
 }
 
-export function getApplication(id: string): ApplicationWithDetails | undefined {
-  return getDb()
-    .prepare(`${SELECT_BASE} WHERE a.id = @id`)
-    .get({ id }) as ApplicationWithDetails | undefined;
+export function getApplication(id: string): Promise<ApplicationWithDetails | undefined> {
+  return queryOne<ApplicationWithDetails>(`${SELECT_BASE} WHERE a.id = $1`, [id]);
+}
+
+/** Plain, unlocked read - only used to discover an application's project_id
+ * before taking locks in a fixed project-then-application order. */
+export function getApplicationRaw(id: string): Promise<ApplicationRow | undefined> {
+  return queryOne<ApplicationRow>("SELECT * FROM applications WHERE id = $1", [id]);
+}
+
+/** Locks the base application row for the duration of the caller's transaction.
+ * Callers that also need the project row must lock it first (see
+ * `lockProjectRow`) to keep a consistent lock order across the app. */
+export function lockApplicationRow(id: string): Promise<ApplicationRow | undefined> {
+  return queryOne<ApplicationRow>("SELECT * FROM applications WHERE id = $1 FOR UPDATE", [id]);
 }
 
 export function findActiveApplication(
   projectId: string,
   applicantId: string
-): ApplicationRow | undefined {
-  return getDb()
-    .prepare(
-      `SELECT * FROM applications WHERE project_id = ? AND applicant_id = ? AND status IN ('pending', 'approved')`
-    )
-    .get(projectId, applicantId) as ApplicationRow | undefined;
+): Promise<ApplicationRow | undefined> {
+  return queryOne<ApplicationRow>(
+    `SELECT * FROM applications WHERE project_id = $1 AND applicant_id = $2 AND status IN ('pending', 'approved')`,
+    [projectId, applicantId]
+  );
 }
 
 export interface CreateApplicationInput {
@@ -69,45 +77,31 @@ export interface CreateApplicationInput {
   message?: string;
 }
 
-export function createApplication(input: CreateApplicationInput): ApplicationRow {
+export async function createApplication(input: CreateApplicationInput): Promise<ApplicationRow> {
   const id = makeId("app");
   const createdAt = nowIso();
-  getDb()
-    .prepare(
-      `INSERT INTO applications (id, project_id, applicant_id, status, message, decision_note, created_at)
-       VALUES (@id, @projectId, @applicantId, 'pending', @message, '', @createdAt)`
-    )
-    .run({
-      id,
-      projectId: input.projectId,
-      applicantId: input.applicantId,
-      message: input.message ?? "",
-      createdAt,
-    });
-  return getDb().prepare("SELECT * FROM applications WHERE id = ?").get(id) as ApplicationRow;
+  await query(
+    `INSERT INTO applications (id, project_id, applicant_id, status, message, decision_note, created_at)
+     VALUES ($1, $2, $3, 'pending', $4, '', $5)`,
+    [id, input.projectId, input.applicantId, input.message ?? "", createdAt]
+  );
+  return (await queryOne<ApplicationRow>("SELECT * FROM applications WHERE id = $1", [id]))!;
 }
 
-export function decideApplication(
+export async function decideApplication(
   id: string,
   status: Extract<ApplicationStatus, "approved" | "rejected">,
   decidedBy: string,
   decisionNote = ""
-): ApplicationRow | undefined {
-  getDb()
-    .prepare(
-      `UPDATE applications SET status = @status, decided_by = @decidedBy, decided_at = @decidedAt, decision_note = @decisionNote WHERE id = @id`
-    )
-    .run({ id, status, decidedBy, decidedAt: nowIso(), decisionNote });
-  return getDb().prepare("SELECT * FROM applications WHERE id = ?").get(id) as
-    | ApplicationRow
-    | undefined;
+): Promise<ApplicationRow | undefined> {
+  await query(
+    `UPDATE applications SET status = $1, decided_by = $2, decided_at = $3, decision_note = $4 WHERE id = $5`,
+    [status, decidedBy, nowIso(), decisionNote, id]
+  );
+  return queryOne<ApplicationRow>("SELECT * FROM applications WHERE id = $1", [id]);
 }
 
-export function withdrawApplication(id: string): ApplicationRow | undefined {
-  getDb()
-    .prepare(`UPDATE applications SET status = 'withdrawn' WHERE id = ?`)
-    .run(id);
-  return getDb().prepare("SELECT * FROM applications WHERE id = ?").get(id) as
-    | ApplicationRow
-    | undefined;
+export async function withdrawApplication(id: string): Promise<ApplicationRow | undefined> {
+  await query(`UPDATE applications SET status = 'withdrawn' WHERE id = $1`, [id]);
+  return queryOne<ApplicationRow>("SELECT * FROM applications WHERE id = $1", [id]);
 }

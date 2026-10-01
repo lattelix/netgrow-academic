@@ -30,10 +30,12 @@ function StatCard({ label, value, hint }: { label: string; value: string | numbe
 }
 
 async function ParticipantDashboard({ userId }: { userId: string }) {
-  const applications = listApplications({ applicantId: userId });
-  const tasks = listTasksByAssignee(userId);
-  const events = listEventsForUser(userId).filter((e) => new Date(e.starts_at) >= new Date()).slice(0, 3);
-  const teams = listTeamsForUser(userId);
+  const applications = await listApplications({ applicantId: userId });
+  const tasks = await listTasksByAssignee(userId);
+  const events = (await listEventsForUser(userId))
+    .filter((e) => new Date(e.starts_at) >= new Date())
+    .slice(0, 3);
+  const teams = await listTeamsForUser(userId);
 
   const activeApplications = applications.filter((a) => a.status === "pending" || a.status === "approved");
   const openTasks = tasks.filter((t) => t.status !== "done");
@@ -144,9 +146,9 @@ async function ParticipantDashboard({ userId }: { userId: string }) {
 }
 
 async function OrganizerDashboard({ userId }: { userId: string }) {
-  const projects = listProjects({ organizerId: userId });
-  const pending = listApplications({ organizerId: userId, status: "pending" });
-  const activity = listRecentActivity(6);
+  const projects = await listProjects({ organizerId: userId });
+  const pending = await listApplications({ organizerId: userId, status: "pending" });
+  const activity = await listRecentActivity(6);
 
   return (
     <div className="space-y-6">
@@ -221,8 +223,8 @@ async function OrganizerDashboard({ userId }: { userId: string }) {
 }
 
 async function AdminDashboard() {
-  const summary = getAnalyticsSummary();
-  const activity = listRecentActivity(6);
+  const summary = await getAnalyticsSummary();
+  const activity = await listRecentActivity(6);
 
   return (
     <div className="space-y-6">

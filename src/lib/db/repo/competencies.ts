@@ -1,17 +1,13 @@
-import { getDb } from "@/lib/db/client";
+import { query, queryOne } from "@/lib/db/client";
 import { makeId, nowIso } from "@/lib/db/ids";
 import type { CompetencyRow, UserCompetencyRow } from "@/lib/db/types";
 
-export function listCompetencies(): CompetencyRow[] {
-  return getDb()
-    .prepare("SELECT * FROM competencies ORDER BY category, name")
-    .all() as CompetencyRow[];
+export function listCompetencies(): Promise<CompetencyRow[]> {
+  return query<CompetencyRow>("SELECT * FROM competencies ORDER BY category, name");
 }
 
-export function getCompetency(id: string): CompetencyRow | undefined {
-  return getDb().prepare("SELECT * FROM competencies WHERE id = ?").get(id) as
-    | CompetencyRow
-    | undefined;
+export function getCompetency(id: string): Promise<CompetencyRow | undefined> {
+  return queryOne<CompetencyRow>("SELECT * FROM competencies WHERE id = $1", [id]);
 }
 
 export interface CreateCompetencyInput {
@@ -20,44 +16,31 @@ export interface CreateCompetencyInput {
   description?: string;
 }
 
-export function createCompetency(input: CreateCompetencyInput): CompetencyRow {
+export async function createCompetency(input: CreateCompetencyInput): Promise<CompetencyRow> {
   const id = makeId("comp");
-  getDb()
-    .prepare(
-      `INSERT INTO competencies (id, name, category, description, created_at)
-       VALUES (@id, @name, @category, @description, @createdAt)`
-    )
-    .run({
-      id,
-      name: input.name,
-      category: input.category,
-      description: input.description ?? "",
-      createdAt: nowIso(),
-    });
-  return getCompetency(id)!;
+  await query(
+    `INSERT INTO competencies (id, name, category, description, created_at)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [id, input.name, input.category, input.description ?? "", nowIso()]
+  );
+  return (await getCompetency(id))!;
 }
 
-export function updateCompetency(
+export async function updateCompetency(
   id: string,
   input: Partial<CreateCompetencyInput>
-): CompetencyRow | undefined {
-  const current = getCompetency(id);
+): Promise<CompetencyRow | undefined> {
+  const current = await getCompetency(id);
   if (!current) return undefined;
-  getDb()
-    .prepare(
-      `UPDATE competencies SET name = @name, category = @category, description = @description WHERE id = @id`
-    )
-    .run({
-      id,
-      name: input.name ?? current.name,
-      category: input.category ?? current.category,
-      description: input.description ?? current.description,
-    });
+  await query(
+    `UPDATE competencies SET name = $1, category = $2, description = $3 WHERE id = $4`,
+    [input.name ?? current.name, input.category ?? current.category, input.description ?? current.description, id]
+  );
   return getCompetency(id);
 }
 
-export function deleteCompetency(id: string): void {
-  getDb().prepare("DELETE FROM competencies WHERE id = ?").run(id);
+export async function deleteCompetency(id: string): Promise<void> {
+  await query("DELETE FROM competencies WHERE id = $1", [id]);
 }
 
 export interface UserCompetencyWithDetails extends UserCompetencyRow {
@@ -65,46 +48,34 @@ export interface UserCompetencyWithDetails extends UserCompetencyRow {
   category: string;
 }
 
-export function listUserCompetencies(userId: string): UserCompetencyWithDetails[] {
-  return getDb()
-    .prepare(
-      `SELECT uc.*, c.name, c.category
-       FROM user_competencies uc
-       JOIN competencies c ON c.id = uc.competency_id
-       WHERE uc.user_id = ?
-       ORDER BY c.category, c.name`
-    )
-    .all(userId) as UserCompetencyWithDetails[];
+export function listUserCompetencies(userId: string): Promise<UserCompetencyWithDetails[]> {
+  return query<UserCompetencyWithDetails>(
+    `SELECT uc.*, c.name, c.category
+     FROM user_competencies uc
+     JOIN competencies c ON c.id = uc.competency_id
+     WHERE uc.user_id = $1
+     ORDER BY c.category, c.name`,
+    [userId]
+  );
 }
 
-export function upsertUserCompetency(
+export async function upsertUserCompetency(
   userId: string,
   competencyId: string,
   level: number
-): UserCompetencyRow {
-  const db = getDb();
-  const existing = db
-    .prepare(
-      "SELECT * FROM user_competencies WHERE user_id = ? AND competency_id = ?"
-    )
-    .get(userId, competencyId) as UserCompetencyRow | undefined;
-  if (existing) {
-    db.prepare("UPDATE user_competencies SET level = ? WHERE id = ?").run(
-      level,
-      existing.id
-    );
-    return { ...existing, level };
-  }
+): Promise<UserCompetencyRow> {
   const id = makeId("ucomp");
-  db.prepare(
+  const row = await queryOne<UserCompetencyRow>(
     `INSERT INTO user_competencies (id, user_id, competency_id, level, created_at)
-     VALUES (@id, @userId, @competencyId, @level, @createdAt)`
-  ).run({ id, userId, competencyId, level, createdAt: nowIso() });
-  return { id, user_id: userId, competency_id: competencyId, level, created_at: nowIso() };
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (user_id, competency_id)
+     DO UPDATE SET level = EXCLUDED.level
+     RETURNING *`,
+    [id, userId, competencyId, level, nowIso()]
+  );
+  return row!;
 }
 
-export function deleteUserCompetency(userId: string, competencyId: string): void {
-  getDb()
-    .prepare("DELETE FROM user_competencies WHERE user_id = ? AND competency_id = ?")
-    .run(userId, competencyId);
+export async function deleteUserCompetency(userId: string, competencyId: string): Promise<void> {
+  await query("DELETE FROM user_competencies WHERE user_id = $1 AND competency_id = $2", [userId, competencyId]);
 }

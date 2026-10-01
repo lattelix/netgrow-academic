@@ -4,6 +4,8 @@ import { deleteUserCompetency, listUserCompetencies } from "@/lib/db/repo/compet
 import { serializeUserCompetency } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
 
+export const dynamic = "force-dynamic";
+
 interface Params {
   params: Promise<{ competencyId: string }>;
 }
@@ -13,8 +15,8 @@ export async function DELETE(_request: Request, { params }: Params) {
   if (!user) return unauthorized();
   const { competencyId } = await params;
 
-  deleteUserCompetency(user.id, competencyId);
-  logActivity({
+  await deleteUserCompetency(user.id, competencyId);
+  await logActivity({
     actorId: user.id,
     action: "profile.competency_removed",
     entityType: "user",
@@ -22,5 +24,5 @@ export async function DELETE(_request: Request, { params }: Params) {
     metadata: { competencyId },
   });
 
-  return ok(listUserCompetencies(user.id).map(serializeUserCompetency));
+  return ok((await listUserCompetencies(user.id)).map(serializeUserCompetency));
 }

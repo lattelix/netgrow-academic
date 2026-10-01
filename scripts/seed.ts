@@ -4,53 +4,49 @@
  * All names, projects and metrics are invented for this academic demo and do
  * not reference any real organization or person.
  */
-import { getDb } from "../src/lib/db/client";
+import { loadLocalEnv } from "../src/lib/db/env";
+
+loadLocalEnv();
+
+import type { Pool } from "pg";
+import { closePool, getPool } from "../src/lib/db/client";
+import { assertDestructiveResetAllowed } from "../src/lib/db/resetGuard";
+import { CONTENT_TABLES_CHILD_FIRST } from "../src/lib/db/schemaTables";
 
 type Row = Record<string, unknown>;
 
-function run() {
-  const db = getDb();
+async function insert(pool: Pool, table: string, row: Row): Promise<void> {
+  const cols = Object.keys(row);
+  const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
+  const values = cols.map((c) => row[c]);
+  await pool.query(`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${placeholders})`, values);
+}
 
-  db.exec("PRAGMA foreign_keys = OFF");
-  const wipeOrder = [
-    "activity_log",
-    "events",
-    "tasks",
-    "team_members",
-    "teams",
-    "applications",
-    "project_competencies",
-    "projects",
-    "user_competencies",
-    "competencies",
-    "users",
-    "shifts",
-  ];
-  for (const table of wipeOrder) {
-    db.exec(`DELETE FROM ${table}`);
+async function run() {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("DATABASE_URL не задан. Укажите его в .env.local перед запуском pnpm db:seed.");
   }
-  db.exec("PRAGMA foreign_keys = ON");
+  assertDestructiveResetAllowed(connectionString);
 
-  db.exec(
-    `INSERT OR IGNORE INTO roles (code, name) VALUES
+  const pool = getPool();
+
+  for (const table of CONTENT_TABLES_CHILD_FIRST) {
+    await pool.query(`DELETE FROM ${table}`);
+  }
+
+  await pool.query(
+    `INSERT INTO roles (code, name) VALUES
      ('participant', 'Участник'),
      ('organizer', 'Организатор'),
-     ('admin', 'Администратор')`
+     ('admin', 'Администратор')
+     ON CONFLICT (code) DO NOTHING`
   );
-  const roleIdByCode = new Map(
-    (db.prepare("SELECT id, code FROM roles").all() as { id: number; code: string }[]).map(
-      (r) => [r.code, r.id]
-    )
-  );
-
-  const insert = (table: string, row: Row) => {
-    const cols = Object.keys(row);
-    const placeholders = cols.map((c) => `@${c}`).join(", ");
-    db.prepare(`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${placeholders})`).run(row);
-  };
+  const roleRows = (await pool.query<{ id: number; code: string }>("SELECT id, code FROM roles")).rows;
+  const roleIdByCode = new Map(roleRows.map((r) => [r.code, r.id]));
 
   // --- Shifts -------------------------------------------------------------
-  insert("shifts", {
+  await insert(pool, "shifts", {
     id: "shift-vector",
     name: "Смена «Вектор»",
     code: "VECTOR-2026",
@@ -59,7 +55,7 @@ function run() {
     status: "active",
     created_at: "2026-08-01T09:00:00.000Z",
   });
-  insert("shifts", {
+  await insert(pool, "shifts", {
     id: "shift-horizon",
     name: "Смена «Горизонт»",
     code: "HORIZON-2026",
@@ -89,7 +85,7 @@ function run() {
     { id: "comp-ecology", name: "Экологическая грамотность", category: "Экология", description: "Основы устойчивого природопользования" },
   ];
   for (const c of competencies) {
-    insert("competencies", { ...c, created_at: "2026-08-01T09:00:00.000Z" });
+    await insert(pool, "competencies", { ...c, created_at: "2026-08-01T09:00:00.000Z" });
   }
 
   // --- Users ----------------------------------------------------------------
@@ -103,7 +99,7 @@ function run() {
     bio: "Администратор информационной системы лагеря.",
     avatar_color: "#4B5563",
   };
-  insert("users", { ...admin, created_at: "2026-07-15T09:00:00.000Z" });
+  await insert(pool, "users", { ...admin, created_at: "2026-07-15T09:00:00.000Z" });
 
   const organizers = [
     {
@@ -127,7 +123,7 @@ function run() {
       avatar_color: "#7C3AED",
     },
   ];
-  for (const o of organizers) insert("users", { ...o, created_at: "2026-07-20T09:00:00.000Z" });
+  for (const o of organizers) await insert(pool, "users", { ...o, created_at: "2026-07-20T09:00:00.000Z" });
 
   interface ParticipantSeed {
     id: string;
@@ -282,7 +278,7 @@ function run() {
   ];
 
   for (const p of participants) {
-    insert("users", {
+    await insert(pool, "users", {
       id: p.id,
       full_name: p.full_name,
       email: p.email,
@@ -294,7 +290,7 @@ function run() {
       created_at: "2026-08-10T09:00:00.000Z",
     });
     for (const c of p.competencies) {
-      insert("user_competencies", {
+      await insert(pool, "user_competencies", {
         id: `ucomp-${p.id}-${c.id}`,
         user_id: p.id,
         competency_id: c.id,
@@ -305,7 +301,7 @@ function run() {
   }
 
   // --- Projects ---------------------------------------------------------
-  insert("projects", {
+  await insert(pool, "projects", {
     id: "proj-media-center",
     title: "Летний медиацентр",
     description:
@@ -319,7 +315,7 @@ function run() {
     created_at: "2026-08-02T10:00:00.000Z",
     updated_at: "2026-08-26T10:00:00.000Z",
   });
-  insert("projects", {
+  await insert(pool, "projects", {
     id: "proj-eco-quest",
     title: "Экологический квест",
     description:
@@ -333,7 +329,7 @@ function run() {
     created_at: "2026-08-27T10:00:00.000Z",
     updated_at: "2026-08-27T10:00:00.000Z",
   });
-  insert("projects", {
+  await insert(pool, "projects", {
     id: "proj-opening-concert",
     title: "Творческий вечер: открытие смены",
     description: "Концертная программа на открытие смены: номера, ведущие, оформление сцены.",
@@ -346,7 +342,7 @@ function run() {
     created_at: "2026-08-01T10:00:00.000Z",
     updated_at: "2026-08-25T20:00:00.000Z",
   });
-  insert("projects", {
+  await insert(pool, "projects", {
     id: "proj-robotics",
     title: "Робо-мастерская",
     description: "Сборка простых роботов и подготовка мини-соревнования между отрядами.",
@@ -359,7 +355,7 @@ function run() {
     created_at: "2026-08-28T10:00:00.000Z",
     updated_at: "2026-08-28T10:00:00.000Z",
   });
-  insert("projects", {
+  await insert(pool, "projects", {
     id: "proj-sport-fest",
     title: "Спортивный фестиваль «Дружба»",
     description: "Организация межотрядных эстафет и турниров в течение смены.",
@@ -372,7 +368,7 @@ function run() {
     created_at: "2026-08-03T10:00:00.000Z",
     updated_at: "2026-08-29T10:00:00.000Z",
   });
-  insert("projects", {
+  await insert(pool, "projects", {
     id: "proj-camp-newspaper",
     title: "Лагерная газета",
     description: "Еженедельный выпуск печатной газеты смены с заметками и интервью.",
@@ -385,7 +381,7 @@ function run() {
     created_at: "2026-09-01T10:00:00.000Z",
     updated_at: "2026-09-01T10:00:00.000Z",
   });
-  insert("projects", {
+  await insert(pool, "projects", {
     id: "proj-photo-project",
     title: "Фотопроект «Один день смены»",
     description: "Фотоальбом одного дня смены, собранный участниками из разных отрядов.",
@@ -416,7 +412,7 @@ function run() {
     ["proj-photo-project", "comp-photo", 2],
   ];
   for (const [projectId, competencyId, minLevel] of projectCompetencies) {
-    insert("project_competencies", {
+    await insert(pool, "project_competencies", {
       id: `pcomp-${projectId}-${competencyId}`,
       project_id: projectId,
       competency_id: competencyId,
@@ -425,7 +421,7 @@ function run() {
   }
 
   // --- Applications, teams, tasks -----------------------------------------
-  function seedTeamProject(opts: {
+  async function seedTeamProject(opts: {
     projectId: string;
     teamId: string;
     teamName: string;
@@ -433,14 +429,14 @@ function run() {
     organizerId: string;
     appliedAt: string;
   }) {
-    insert("teams", {
+    await insert(pool, "teams", {
       id: opts.teamId,
       project_id: opts.projectId,
       name: opts.teamName,
       created_at: opts.appliedAt,
     });
     for (const m of opts.members) {
-      insert("applications", {
+      await insert(pool, "applications", {
         id: `app-${opts.projectId}-${m.userId}`,
         project_id: opts.projectId,
         applicant_id: m.userId,
@@ -451,7 +447,7 @@ function run() {
         decided_at: opts.appliedAt,
         created_at: opts.appliedAt,
       });
-      insert("team_members", {
+      await insert(pool, "team_members", {
         id: `tmem-${opts.teamId}-${m.userId}`,
         team_id: opts.teamId,
         user_id: m.userId,
@@ -461,7 +457,7 @@ function run() {
     }
   }
 
-  seedTeamProject({
+  await seedTeamProject({
     projectId: "proj-media-center",
     teamId: "team-media-center",
     teamName: "Команда «Летний медиацентр»",
@@ -474,7 +470,7 @@ function run() {
     ],
   });
 
-  seedTeamProject({
+  await seedTeamProject({
     projectId: "proj-opening-concert",
     teamId: "team-opening-concert",
     teamName: "Команда «Открытие смены»",
@@ -487,7 +483,7 @@ function run() {
     ],
   });
 
-  seedTeamProject({
+  await seedTeamProject({
     projectId: "proj-sport-fest",
     teamId: "team-sport-fest",
     teamName: "Команда «Спортивный фестиваль»",
@@ -499,7 +495,7 @@ function run() {
     ],
   });
 
-  seedTeamProject({
+  await seedTeamProject({
     projectId: "proj-photo-project",
     teamId: "team-photo-project",
     teamName: "Команда «Фотопроект»",
@@ -509,7 +505,7 @@ function run() {
   });
 
   // Pending / decided applications for the recruiting queue demo.
-  insert("applications", {
+  await insert(pool, "applications", {
     id: "app-eco-quest-vasilev",
     project_id: "proj-eco-quest",
     applicant_id: "user-vasilev",
@@ -520,7 +516,7 @@ function run() {
     decided_at: null,
     created_at: "2026-08-28T09:00:00.000Z",
   });
-  insert("applications", {
+  await insert(pool, "applications", {
     id: "app-eco-quest-volkov",
     project_id: "proj-eco-quest",
     applicant_id: "user-volkov",
@@ -531,7 +527,7 @@ function run() {
     decided_at: null,
     created_at: "2026-08-29T09:00:00.000Z",
   });
-  insert("applications", {
+  await insert(pool, "applications", {
     id: "app-eco-quest-nikitina",
     project_id: "proj-eco-quest",
     applicant_id: "user-nikitina",
@@ -542,7 +538,7 @@ function run() {
     decided_at: "2026-08-29T10:00:00.000Z",
     created_at: "2026-08-28T15:00:00.000Z",
   });
-  insert("applications", {
+  await insert(pool, "applications", {
     id: "app-robotics-volkov",
     project_id: "proj-robotics",
     applicant_id: "user-volkov",
@@ -656,7 +652,7 @@ function run() {
     },
   ];
   for (const t of tasks) {
-    insert("tasks", { ...t, updated_at: t.created_at });
+    await insert(pool, "tasks", { ...t, updated_at: t.created_at });
   }
 
   // --- Events ---------------------------------------------------------------
@@ -746,7 +742,7 @@ function run() {
     },
   ];
   for (const e of events) {
-    insert("events", { ...e, created_at: "2026-08-15T09:00:00.000Z" });
+    await insert(pool, "events", { ...e, created_at: "2026-08-15T09:00:00.000Z" });
   }
 
   // --- Activity log (historical) --------------------------------------------
@@ -788,17 +784,20 @@ function run() {
       created_at: "2026-09-01T09:00:00.000Z",
     },
   ];
-  for (const l of logs) insert("activity_log", l);
+  for (const l of logs) await insert(pool, "activity_log", l);
+
+  const countOf = async (table: string) =>
+    (await pool.query<{ c: number }>(`SELECT COUNT(*) AS c FROM ${table}`)).rows[0].c;
 
   console.log("Демо-данные загружены:");
-  console.log(`  Смены: ${db.prepare("SELECT COUNT(*) c FROM shifts").get()}`);
-  console.log(`  Пользователи: ${JSON.stringify(db.prepare("SELECT COUNT(*) c FROM users").get())}`);
-  console.log(`  Компетенции: ${JSON.stringify(db.prepare("SELECT COUNT(*) c FROM competencies").get())}`);
-  console.log(`  Проекты: ${JSON.stringify(db.prepare("SELECT COUNT(*) c FROM projects").get())}`);
-  console.log(`  Заявки: ${JSON.stringify(db.prepare("SELECT COUNT(*) c FROM applications").get())}`);
-  console.log(`  Команды: ${JSON.stringify(db.prepare("SELECT COUNT(*) c FROM teams").get())}`);
-  console.log(`  Задачи: ${JSON.stringify(db.prepare("SELECT COUNT(*) c FROM tasks").get())}`);
-  console.log(`  События: ${JSON.stringify(db.prepare("SELECT COUNT(*) c FROM events").get())}`);
+  console.log(`  Смены: ${await countOf("shifts")}`);
+  console.log(`  Пользователи: ${await countOf("users")}`);
+  console.log(`  Компетенции: ${await countOf("competencies")}`);
+  console.log(`  Проекты: ${await countOf("projects")}`);
+  console.log(`  Заявки: ${await countOf("applications")}`);
+  console.log(`  Команды: ${await countOf("teams")}`);
+  console.log(`  Задачи: ${await countOf("tasks")}`);
+  console.log(`  События: ${await countOf("events")}`);
   console.log("");
   console.log("Демо-аккаунты для входа:");
   console.log("  Участник:    maria.sokolova@druzhba.demo (Мария Соколова)");
@@ -806,4 +805,9 @@ function run() {
   console.log("  Администратор: admin@druzhba.demo (Виктор Наумов)");
 }
 
-run();
+run()
+  .catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  })
+  .finally(() => closePool());

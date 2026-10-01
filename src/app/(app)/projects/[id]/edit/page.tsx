@@ -12,16 +12,16 @@ export default async function EditProjectPage({ params }: { params: Promise<{ id
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const project = getProject(id);
+  const project = await getProject(id);
   if (!project) notFound();
 
   if (!canEditProject(toActorContext(user), project.organizer_id)) {
     return <ForbiddenState description="Редактировать проект может только его организатор или администратор." />;
   }
 
-  const shifts = listShifts();
-  const competencies = listCompetencies();
-  const projectCompetencies = listProjectCompetencies(id);
+  const shifts = await listShifts();
+  const competencies = await listCompetencies();
+  const projectCompetencies = await listProjectCompetencies(id);
 
   return (
     <div className="max-w-2xl space-y-6">

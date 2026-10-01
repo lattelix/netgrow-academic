@@ -5,6 +5,8 @@ import { SwitchAccountButton } from "@/components/app/SwitchAccountButton";
 import { ROLE_LABELS } from "@/lib/format";
 import { initials } from "@/lib/format";
 
+export const dynamic = "force-dynamic";
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");

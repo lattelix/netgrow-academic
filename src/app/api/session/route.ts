@@ -5,6 +5,8 @@ import { getCurrentUser, SESSION_COOKIE, SESSION_COOKIE_OPTIONS } from "@/lib/au
 import { badRequest, notFound, ok } from "@/lib/api/respond";
 import { loginSchema } from "@/lib/validation/schemas";
 
+export const dynamic = "force-dynamic";
+
 function serialize(user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>) {
   return {
     id: user.id,
@@ -29,12 +31,12 @@ export async function POST(request: Request) {
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const user = getUserById(parsed.data.userId);
+  const user = await getUserById(parsed.data.userId);
   if (!user) return notFound("Демо-аккаунт не найден");
 
   const store = await cookies();
   store.set(SESSION_COOKIE, user.id, SESSION_COOKIE_OPTIONS);
-  logActivity({
+  await logActivity({
     actorId: user.id,
     action: "session.login",
     entityType: "user",
@@ -50,7 +52,7 @@ export async function DELETE() {
   const store = await cookies();
   store.delete(SESSION_COOKIE);
   if (user) {
-    logActivity({
+    await logActivity({
       actorId: user.id,
       action: "session.logout",
       entityType: "user",

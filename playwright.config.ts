@@ -1,4 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
+import { loadLocalEnv } from "./src/lib/db/env";
+import { deriveE2eDatabaseUrl } from "./e2e/env";
+
+loadLocalEnv();
 
 export default defineConfig({
   testDir: "./e2e",
@@ -18,7 +22,7 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 180_000,
     env: {
-      NETGROW_DB_PATH: "./data/netgrow.e2e.db",
+      DATABASE_URL: deriveE2eDatabaseUrl(),
     },
   },
   projects: [

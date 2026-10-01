@@ -10,8 +10,9 @@ export default async function ProfilePage() {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const owned = listUserCompetencies(user.id);
-  const shift = user.shift_id ? getShift(user.shift_id) : undefined;
+  const owned = await listUserCompetencies(user.id);
+  const shift = user.shift_id ? await getShift(user.shift_id) : undefined;
+  const allCompetencies = user.role_code === "participant" ? await listCompetencies() : [];
 
   return (
     <div className="space-y-6">
@@ -39,7 +40,7 @@ export default async function ProfilePage() {
           </CardHeader>
           <CardBody>
             <CompetencyEditor
-              allCompetencies={listCompetencies().map((c) => ({ id: c.id, name: c.name, category: c.category }))}
+              allCompetencies={allCompetencies.map((c) => ({ id: c.id, name: c.name, category: c.category }))}
               owned={owned.map((o) => ({
                 competencyId: o.competency_id,
                 name: o.name,

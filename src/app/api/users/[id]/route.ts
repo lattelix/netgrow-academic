@@ -7,6 +7,8 @@ import { getRoleByCode } from "@/lib/db/repo/roles";
 import { serializeUser } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
 
+export const dynamic = "force-dynamic";
+
 interface Params {
   params: Promise<{ id: string }>;
 }
@@ -15,7 +17,7 @@ export async function GET(_request: Request, { params }: Params) {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
   const { id } = await params;
-  const target = getUserById(id);
+  const target = await getUserById(id);
   if (!target) return notFound("Пользователь не найден");
   return ok(serializeUser(target));
 }
@@ -26,18 +28,18 @@ export async function PATCH(request: Request, { params }: Params) {
   if (!user) return unauthorized();
   if (!canManageReferenceData(toActorContext(user))) return forbidden();
 
-  const existing = getUserById(id);
+  const existing = await getUserById(id);
   if (!existing) return notFound("Пользователь не найден");
 
   const body = await request.json().catch(() => null);
   const parsed = updateUserRoleSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const role = getRoleByCode(parsed.data.roleCode);
+  const role = await getRoleByCode(parsed.data.roleCode);
   if (!role) return badRequest("Неизвестная роль");
 
-  updateUser(id, { roleId: role.id });
-  logActivity({
+  await updateUser(id, { roleId: role.id });
+  await logActivity({
     actorId: user.id,
     action: "user.role_changed",
     entityType: "user",
@@ -45,6 +47,6 @@ export async function PATCH(request: Request, { params }: Params) {
     metadata: { roleCode: parsed.data.roleCode },
   });
 
-  const updated = getUserById(id)!;
+  const updated = (await getUserById(id))!;
   return ok(serializeUser(updated));
 }

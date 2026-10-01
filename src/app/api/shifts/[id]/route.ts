@@ -6,6 +6,8 @@ import { getShift, updateShift } from "@/lib/db/repo/shifts";
 import { serializeShift } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
 
+export const dynamic = "force-dynamic";
+
 interface Params {
   params: Promise<{ id: string }>;
 }
@@ -16,15 +18,15 @@ export async function PATCH(request: Request, { params }: Params) {
   if (!user) return unauthorized();
   if (!canManageReferenceData(toActorContext(user))) return forbidden();
 
-  const existing = getShift(id);
+  const existing = await getShift(id);
   if (!existing) return notFound("Смена не найдена");
 
   const body = await request.json().catch(() => null);
   const parsed = updateShiftSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const updated = updateShift(id, parsed.data);
-  logActivity({
+  const updated = await updateShift(id, parsed.data);
+  await logActivity({
     actorId: user.id,
     action: "shift.updated",
     entityType: "shift",

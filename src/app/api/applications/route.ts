@@ -13,7 +13,10 @@ import {
 import { getProject } from "@/lib/db/repo/projects";
 import { serializeApplication } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
+import { isUniqueViolation } from "@/lib/db/pgErrors";
 import type { ApplicationStatus } from "@/lib/db/types";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
@@ -36,7 +39,7 @@ export async function GET(request: Request) {
   const projectId = searchParams.get("projectId");
   if (projectId) filter.projectId = projectId;
 
-  return ok(listApplications(filter).map(serializeApplication));
+  return ok((await listApplications(filter)).map(serializeApplication));
 }
 
 export async function POST(request: Request) {
@@ -49,10 +52,10 @@ export async function POST(request: Request) {
   const parsed = createApplicationSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const project = getProject(parsed.data.projectId);
+  const project = await getProject(parsed.data.projectId);
   if (!project) return notFound("Проект не найден");
 
-  const activeApplication = findActiveApplication(project.id, user.id);
+  const activeApplication = await findActiveApplication(project.id, user.id);
   const eligibility = checkApplicationEligibility({
     project: { status: project.status, ageGroup: project.age_group, capacity: project.capacity },
     applicant: { ageGroup: user.age_group },
@@ -66,13 +69,31 @@ export async function POST(request: Request) {
     });
   }
 
-  const application = createApplication({
-    projectId: project.id,
-    applicantId: user.id,
-    message: parsed.data.message,
-  });
+  let application;
+  try {
+    application = await createApplication({
+      projectId: project.id,
+      applicantId: user.id,
+      message: parsed.data.message,
+    });
+  } catch (err) {
+    // The eligibility check above has a time-of-check/time-of-use gap under
+    // concurrent double submission; the partial unique index is the real
+    // guard, so surface its violation as a controlled conflict, not a 500.
+    if (isUniqueViolation(err)) {
+      return conflict("Заявку нельзя подать", {
+        reasons: [
+          {
+            code: "duplicate_active_application",
+            message: describeEligibilityReason("duplicate_active_application"),
+          },
+        ],
+      });
+    }
+    throw err;
+  }
 
-  logActivity({
+  await logActivity({
     actorId: user.id,
     action: "application.created",
     entityType: "application",
@@ -80,6 +101,6 @@ export async function POST(request: Request) {
     metadata: { projectId: project.id },
   });
 
-  const withDetails = getApplication(application.id);
+  const withDetails = await getApplication(application.id);
   return ok(withDetails ? serializeApplication(withDetails) : application, 201);
 }

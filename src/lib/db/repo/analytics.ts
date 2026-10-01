@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/db/client";
+import { query, queryOne } from "@/lib/db/client";
 
 export interface StatusCount {
   status: string;
@@ -18,68 +18,53 @@ export interface AnalyticsSummary {
   directionBreakdown: { direction: string; projectCount: number }[];
 }
 
-export function getAnalyticsSummary(): AnalyticsSummary {
-  const db = getDb();
+export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
+  const projectsByStatus = await query<StatusCount>(
+    "SELECT status, COUNT(*) AS count FROM projects GROUP BY status"
+  );
 
-  const projectsByStatus = db
-    .prepare("SELECT status, COUNT(*) AS count FROM projects GROUP BY status")
-    .all() as StatusCount[];
+  const applicationsByStatus = await query<StatusCount>(
+    "SELECT status, COUNT(*) AS count FROM applications GROUP BY status"
+  );
 
-  const applicationsByStatus = db
-    .prepare("SELECT status, COUNT(*) AS count FROM applications GROUP BY status")
-    .all() as StatusCount[];
-
-  const tasksByStatus = db
-    .prepare("SELECT status, COUNT(*) AS count FROM tasks GROUP BY status")
-    .all() as StatusCount[];
+  const tasksByStatus = await query<StatusCount>("SELECT status, COUNT(*) AS count FROM tasks GROUP BY status");
 
   const totalParticipants = (
-    db
-      .prepare(
-        "SELECT COUNT(*) AS c FROM users u JOIN roles r ON r.id = u.role_id WHERE r.code = 'participant'"
-      )
-      .get() as { c: number }
-  ).c;
+    await queryOne<{ c: number }>(
+      "SELECT COUNT(*) AS c FROM users u JOIN roles r ON r.id = u.role_id WHERE r.code = 'participant'"
+    )
+  )!.c;
 
   const totalOrganizers = (
-    db
-      .prepare(
-        "SELECT COUNT(*) AS c FROM users u JOIN roles r ON r.id = u.role_id WHERE r.code = 'organizer'"
-      )
-      .get() as { c: number }
-  ).c;
-
-  const totalProjects = (db.prepare("SELECT COUNT(*) AS c FROM projects").get() as { c: number })
-    .c;
-
-  const totalTeams = (db.prepare("SELECT COUNT(*) AS c FROM teams").get() as { c: number }).c;
-
-  const fillRows = db
-    .prepare(
-      `SELECT p.capacity AS capacity,
-        (SELECT COUNT(*) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE t.project_id = p.id) AS members
-       FROM projects p
-       WHERE p.status IN ('recruiting', 'in_progress', 'completed')`
+    await queryOne<{ c: number }>(
+      "SELECT COUNT(*) AS c FROM users u JOIN roles r ON r.id = u.role_id WHERE r.code = 'organizer'"
     )
-    .all() as { capacity: number; members: number }[];
+  )!.c;
+
+  const totalProjects = (await queryOne<{ c: number }>("SELECT COUNT(*) AS c FROM projects"))!.c;
+
+  const totalTeams = (await queryOne<{ c: number }>("SELECT COUNT(*) AS c FROM teams"))!.c;
+
+  const fillRows = await query<{ capacity: number; members: number }>(
+    `SELECT p.capacity AS capacity,
+      (SELECT COUNT(*) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE t.project_id = p.id) AS members
+     FROM projects p
+     WHERE p.status IN ('recruiting', 'in_progress', 'completed')`
+  );
   const averageTeamFillRate =
     fillRows.length === 0
       ? 0
       : fillRows.reduce((sum, r) => sum + Math.min(1, r.members / r.capacity), 0) / fillRows.length;
 
-  const decisionRow = db
-    .prepare(
-      `SELECT AVG((julianday(decided_at) - julianday(created_at)) * 24) AS avgHours
-       FROM applications
-       WHERE decided_at IS NOT NULL`
-    )
-    .get() as { avgHours: number | null };
+  const decisionRow = await queryOne<{ avgHours: number | null }>(
+    `SELECT AVG(EXTRACT(EPOCH FROM (decided_at::timestamptz - created_at::timestamptz)) / 3600) AS "avgHours"
+     FROM applications
+     WHERE decided_at IS NOT NULL`
+  );
 
-  const directionBreakdown = db
-    .prepare(
-      `SELECT direction, COUNT(*) AS projectCount FROM projects GROUP BY direction ORDER BY projectCount DESC`
-    )
-    .all() as { direction: string; projectCount: number }[];
+  const directionBreakdown = await query<{ direction: string; projectCount: number }>(
+    `SELECT direction, COUNT(*) AS "projectCount" FROM projects GROUP BY direction ORDER BY "projectCount" DESC`
+  );
 
   return {
     projectsByStatus,
@@ -90,7 +75,7 @@ export function getAnalyticsSummary(): AnalyticsSummary {
     totalProjects,
     totalTeams,
     averageTeamFillRate,
-    averageDecisionHours: decisionRow.avgHours,
+    averageDecisionHours: decisionRow?.avgHours ?? null,
     directionBreakdown,
   };
 }

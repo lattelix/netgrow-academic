@@ -14,8 +14,8 @@ export default async function NewProjectPage() {
     return <ForbiddenState description="Создавать проекты может организатор или администратор." />;
   }
 
-  const shifts = listShifts();
-  const competencies = listCompetencies();
+  const shifts = await listShifts();
+  const competencies = await listCompetencies();
 
   return (
     <div className="max-w-2xl space-y-6">

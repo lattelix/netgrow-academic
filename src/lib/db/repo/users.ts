@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/db/client";
+import { query, queryOne } from "@/lib/db/client";
 import { makeId, nowIso } from "@/lib/db/ids";
 import type { AgeGroup, RoleCode, UserRow } from "@/lib/db/types";
 
@@ -13,33 +13,27 @@ const SELECT_WITH_ROLE = `
   JOIN roles r ON r.id = u.role_id
 `;
 
-export function listUsers(filter?: { roleCode?: RoleCode; shiftId?: string }): UserWithRole[] {
+export function listUsers(filter?: { roleCode?: RoleCode; shiftId?: string }): Promise<UserWithRole[]> {
   const clauses: string[] = [];
-  const params: Record<string, unknown> = {};
+  const params: unknown[] = [];
   if (filter?.roleCode) {
-    clauses.push("r.code = @roleCode");
-    params.roleCode = filter.roleCode;
+    params.push(filter.roleCode);
+    clauses.push(`r.code = $${params.length}`);
   }
   if (filter?.shiftId) {
-    clauses.push("u.shift_id = @shiftId");
-    params.shiftId = filter.shiftId;
+    params.push(filter.shiftId);
+    clauses.push(`u.shift_id = $${params.length}`);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  return getDb()
-    .prepare(`${SELECT_WITH_ROLE} ${where} ORDER BY u.full_name`)
-    .all(params) as UserWithRole[];
+  return query<UserWithRole>(`${SELECT_WITH_ROLE} ${where} ORDER BY u.full_name`, params);
 }
 
-export function getUserById(id: string): UserWithRole | undefined {
-  return getDb()
-    .prepare(`${SELECT_WITH_ROLE} WHERE u.id = @id`)
-    .get({ id }) as UserWithRole | undefined;
+export function getUserById(id: string): Promise<UserWithRole | undefined> {
+  return queryOne<UserWithRole>(`${SELECT_WITH_ROLE} WHERE u.id = $1`, [id]);
 }
 
-export function getUserByEmail(email: string): UserWithRole | undefined {
-  return getDb()
-    .prepare(`${SELECT_WITH_ROLE} WHERE u.email = @email`)
-    .get({ email }) as UserWithRole | undefined;
+export function getUserByEmail(email: string): Promise<UserWithRole | undefined> {
+  return queryOne<UserWithRole>(`${SELECT_WITH_ROLE} WHERE u.email = $1`, [email]);
 }
 
 export interface CreateUserInput {
@@ -52,25 +46,24 @@ export interface CreateUserInput {
   avatarColor?: string;
 }
 
-export function createUser(input: CreateUserInput): UserRow {
+export async function createUser(input: CreateUserInput): Promise<UserRow> {
   const id = makeId("user");
-  getDb()
-    .prepare(
-      `INSERT INTO users (id, full_name, email, role_id, shift_id, age_group, bio, avatar_color, created_at)
-       VALUES (@id, @fullName, @email, @roleId, @shiftId, @ageGroup, @bio, @avatarColor, @createdAt)`
-    )
-    .run({
+  await query(
+    `INSERT INTO users (id, full_name, email, role_id, shift_id, age_group, bio, avatar_color, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
       id,
-      fullName: input.fullName,
-      email: input.email,
-      roleId: input.roleId,
-      shiftId: input.shiftId ?? null,
-      ageGroup: input.ageGroup ?? null,
-      bio: input.bio ?? "",
-      avatarColor: input.avatarColor ?? "#2F6F5E",
-      createdAt: nowIso(),
-    });
-  return getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow;
+      input.fullName,
+      input.email,
+      input.roleId,
+      input.shiftId ?? null,
+      input.ageGroup ?? null,
+      input.bio ?? "",
+      input.avatarColor ?? "#2F6F5E",
+      nowIso(),
+    ]
+  );
+  return (await queryOne<UserRow>("SELECT * FROM users WHERE id = $1", [id]))!;
 }
 
 export interface UpdateUserInput {
@@ -81,22 +74,19 @@ export interface UpdateUserInput {
   roleId?: number;
 }
 
-export function updateUser(id: string, input: UpdateUserInput): UserRow | undefined {
-  const current = getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as
-    | UserRow
-    | undefined;
+export async function updateUser(id: string, input: UpdateUserInput): Promise<UserRow | undefined> {
+  const current = await queryOne<UserRow>("SELECT * FROM users WHERE id = $1", [id]);
   if (!current) return undefined;
-  getDb()
-    .prepare(
-      `UPDATE users SET full_name = @fullName, bio = @bio, shift_id = @shiftId, age_group = @ageGroup, role_id = @roleId WHERE id = @id`
-    )
-    .run({
+  await query(
+    `UPDATE users SET full_name = $1, bio = $2, shift_id = $3, age_group = $4, role_id = $5 WHERE id = $6`,
+    [
+      input.fullName ?? current.full_name,
+      input.bio ?? current.bio,
+      input.shiftId === undefined ? current.shift_id : input.shiftId,
+      input.ageGroup === undefined ? current.age_group : input.ageGroup,
+      input.roleId ?? current.role_id,
       id,
-      fullName: input.fullName ?? current.full_name,
-      bio: input.bio ?? current.bio,
-      shiftId: input.shiftId === undefined ? current.shift_id : input.shiftId,
-      ageGroup: input.ageGroup === undefined ? current.age_group : input.ageGroup,
-      roleId: input.roleId ?? current.role_id,
-    });
-  return getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow;
+    ]
+  );
+  return queryOne<UserRow>("SELECT * FROM users WHERE id = $1", [id]);
 }

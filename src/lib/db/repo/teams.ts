@@ -1,31 +1,27 @@
-import { getDb } from "@/lib/db/client";
+import { query, queryOne } from "@/lib/db/client";
 import { makeId, nowIso } from "@/lib/db/ids";
 import type { TeamMemberRow, TeamRow, TeamRole } from "@/lib/db/types";
 
-export function getTeamByProject(projectId: string): TeamRow | undefined {
-  return getDb()
-    .prepare("SELECT * FROM teams WHERE project_id = ?")
-    .get(projectId) as TeamRow | undefined;
+export function getTeamByProject(projectId: string): Promise<TeamRow | undefined> {
+  return queryOne<TeamRow>("SELECT * FROM teams WHERE project_id = $1", [projectId]);
 }
 
-export function getTeam(id: string): TeamRow | undefined {
-  return getDb().prepare("SELECT * FROM teams WHERE id = ?").get(id) as
-    | TeamRow
-    | undefined;
+export function getTeam(id: string): Promise<TeamRow | undefined> {
+  return queryOne<TeamRow>("SELECT * FROM teams WHERE id = $1", [id]);
 }
 
-export function createTeam(projectId: string, name: string): TeamRow {
+export async function createTeam(projectId: string, name: string): Promise<TeamRow> {
   const id = makeId("team");
-  getDb()
-    .prepare(
-      `INSERT INTO teams (id, project_id, name, created_at) VALUES (@id, @projectId, @name, @createdAt)`
-    )
-    .run({ id, projectId, name, createdAt: nowIso() });
-  return getTeam(id)!;
+  await query(
+    `INSERT INTO teams (id, project_id, name, created_at) VALUES ($1, $2, $3, $4)`,
+    [id, projectId, name, nowIso()]
+  );
+  return (await getTeam(id))!;
 }
 
-export function getOrCreateTeam(projectId: string, defaultName: string): TeamRow {
-  return getTeamByProject(projectId) ?? createTeam(projectId, defaultName);
+export async function getOrCreateTeam(projectId: string, defaultName: string): Promise<TeamRow> {
+  const existing = await getTeamByProject(projectId);
+  return existing ?? createTeam(projectId, defaultName);
 }
 
 export interface TeamMemberWithUser extends TeamMemberRow {
@@ -33,65 +29,56 @@ export interface TeamMemberWithUser extends TeamMemberRow {
   avatar_color: string;
 }
 
-export function listTeamMembers(teamId: string): TeamMemberWithUser[] {
-  return getDb()
-    .prepare(
-      `SELECT tm.*, u.full_name, u.avatar_color
-       FROM team_members tm
-       JOIN users u ON u.id = tm.user_id
-       WHERE tm.team_id = ?
-       ORDER BY tm.role_in_team DESC, u.full_name`
-    )
-    .all(teamId) as TeamMemberWithUser[];
+export function listTeamMembers(teamId: string): Promise<TeamMemberWithUser[]> {
+  return query<TeamMemberWithUser>(
+    `SELECT tm.*, u.full_name, u.avatar_color
+     FROM team_members tm
+     JOIN users u ON u.id = tm.user_id
+     WHERE tm.team_id = $1
+     ORDER BY tm.role_in_team DESC, u.full_name`,
+    [teamId]
+  );
 }
 
-export function isTeamMember(teamId: string, userId: string): boolean {
-  const row = getDb()
-    .prepare("SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?")
-    .get(teamId, userId);
+export async function isTeamMember(teamId: string, userId: string): Promise<boolean> {
+  const row = await queryOne("SELECT 1 FROM team_members WHERE team_id = $1 AND user_id = $2", [teamId, userId]);
   return row !== undefined;
 }
 
-export function addTeamMember(
+export async function addTeamMember(
   teamId: string,
   userId: string,
   roleInTeam: TeamRole = "member"
-): TeamMemberRow {
-  const db = getDb();
-  const existing = db
-    .prepare("SELECT * FROM team_members WHERE team_id = ? AND user_id = ?")
-    .get(teamId, userId) as TeamMemberRow | undefined;
-  if (existing) return existing;
+): Promise<TeamMemberRow> {
   const id = makeId("tmem");
-  db.prepare(
+  const row = await queryOne<TeamMemberRow>(
     `INSERT INTO team_members (id, team_id, user_id, role_in_team, joined_at)
-     VALUES (@id, @teamId, @userId, @roleInTeam, @joinedAt)`
-  ).run({ id, teamId, userId, roleInTeam, joinedAt: nowIso() });
-  return db.prepare("SELECT * FROM team_members WHERE id = ?").get(id) as TeamMemberRow;
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (team_id, user_id) DO UPDATE SET team_id = team_members.team_id
+     RETURNING *`,
+    [id, teamId, userId, roleInTeam, nowIso()]
+  );
+  return row!;
 }
 
-export function removeTeamMember(teamId: string, userId: string): void {
-  getDb()
-    .prepare("DELETE FROM team_members WHERE team_id = ? AND user_id = ?")
-    .run(teamId, userId);
+export async function removeTeamMember(teamId: string, userId: string): Promise<void> {
+  await query("DELETE FROM team_members WHERE team_id = $1 AND user_id = $2", [teamId, userId]);
 }
 
-export function listTeamsForUser(userId: string): TeamRow[] {
-  return getDb()
-    .prepare(
-      `SELECT t.* FROM teams t JOIN team_members tm ON tm.team_id = t.id WHERE tm.user_id = ?`
-    )
-    .all(userId) as TeamRow[];
+export function listTeamsForUser(userId: string): Promise<TeamRow[]> {
+  return query<TeamRow>(
+    `SELECT t.* FROM teams t JOIN team_members tm ON tm.team_id = t.id WHERE tm.user_id = $1`,
+    [userId]
+  );
 }
 
-export function listTeamsForOrganizer(organizerId: string): TeamRow[] {
-  return getDb()
-    .prepare(
-      `SELECT t.* FROM teams t JOIN projects p ON p.id = t.project_id WHERE p.organizer_id = ?`
-    )
-    .all(organizerId) as TeamRow[];
+export function listTeamsForOrganizer(organizerId: string): Promise<TeamRow[]> {
+  return query<TeamRow>(
+    `SELECT t.* FROM teams t JOIN projects p ON p.id = t.project_id WHERE p.organizer_id = $1`,
+    [organizerId]
+  );
 }
 
-export function listAllTeams(): TeamRow[] {
-  return getDb().prepare("SELECT * FROM teams").all() as TeamRow[];
+export function listAllTeams(): Promise<TeamRow[]> {
+  return query<TeamRow>("SELECT * FROM teams");
 }

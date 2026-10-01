@@ -14,11 +14,21 @@ This repository contains an independent academic information system. It must not
 - Do not use em dashes in Russian user-facing copy.
 - Do not commit generated build output, local databases, credentials, or environment files.
 - Before finishing, run lint, typecheck, unit tests, production build, and Playwright smoke tests.
-- Do not publish or push the repository. Leave all changes local for review.
+- Publishing, pushing, or deploying this repository requires explicit user authorization for that specific action. Do not do so on your own initiative; absent that authorization, leave changes local for review.
 
 ## Product boundary
 
 NetGrow is an information system for forming project teams and coordinating educational activities in a children's health camp. It is not a general-purpose social network and is not connected to any real commercial product.
+
+## Deployment-ready PostgreSQL edition
+
+This copy of the project is a storage/runtime port of the original academic submission: synchronous
+`better-sqlite3` was replaced with asynchronous `pg` (node-postgres) so the app can run against a
+persistent, hosted PostgreSQL database (e.g. Neon) instead of a local SQLite file. Product behavior,
+routes, business rules, and the demo-account login are unchanged. The original SQLite edition used for
+the thesis defense is preserved separately and is out of scope here: do not read, copy from, or modify
+it, and do not regenerate or alter any thesis documents (Word, presentation, or signature files) from
+this repository.
 
 
 <!-- BEGIN:nextjs-agent-rules -->

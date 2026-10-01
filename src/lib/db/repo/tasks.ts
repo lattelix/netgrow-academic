@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/db/client";
+import { query, queryOne } from "@/lib/db/client";
 import { makeId, nowIso } from "@/lib/db/ids";
 import type { TaskRow, TaskStatus } from "@/lib/db/types";
 
@@ -6,16 +6,19 @@ export interface TaskWithAssignee extends TaskRow {
   assignee_name: string | null;
 }
 
-export function listTasksByTeam(teamId: string): TaskWithAssignee[] {
-  return getDb()
-    .prepare(
-      `SELECT t.*, u.full_name AS assignee_name
-       FROM tasks t
-       LEFT JOIN users u ON u.id = t.assignee_id
-       WHERE t.team_id = ?
-       ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, t.due_date IS NULL, t.due_date`
-    )
-    .all(teamId) as TaskWithAssignee[];
+const ORDER_BY_STATUS_THEN_DUE = `
+  ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, t.due_date IS NULL, t.due_date
+`;
+
+export function listTasksByTeam(teamId: string): Promise<TaskWithAssignee[]> {
+  return query<TaskWithAssignee>(
+    `SELECT t.*, u.full_name AS assignee_name
+     FROM tasks t
+     LEFT JOIN users u ON u.id = t.assignee_id
+     WHERE t.team_id = $1
+     ${ORDER_BY_STATUS_THEN_DUE}`,
+    [teamId]
+  );
 }
 
 export interface TaskWithProject extends TaskWithAssignee {
@@ -23,24 +26,21 @@ export interface TaskWithProject extends TaskWithAssignee {
   project_id: string;
 }
 
-export function listTasksByAssignee(userId: string): TaskWithProject[] {
-  return getDb()
-    .prepare(
-      `SELECT t.*, u.full_name AS assignee_name, p.title AS project_title, p.id AS project_id
-       FROM tasks t
-       LEFT JOIN users u ON u.id = t.assignee_id
-       JOIN teams tm ON tm.id = t.team_id
-       JOIN projects p ON p.id = tm.project_id
-       WHERE t.assignee_id = ?
-       ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, t.due_date IS NULL, t.due_date`
-    )
-    .all(userId) as TaskWithProject[];
+export function listTasksByAssignee(userId: string): Promise<TaskWithProject[]> {
+  return query<TaskWithProject>(
+    `SELECT t.*, u.full_name AS assignee_name, p.title AS project_title, p.id AS project_id
+     FROM tasks t
+     LEFT JOIN users u ON u.id = t.assignee_id
+     JOIN teams tm ON tm.id = t.team_id
+     JOIN projects p ON p.id = tm.project_id
+     WHERE t.assignee_id = $1
+     ${ORDER_BY_STATUS_THEN_DUE}`,
+    [userId]
+  );
 }
 
-export function getTask(id: string): TaskRow | undefined {
-  return getDb().prepare("SELECT * FROM tasks WHERE id = ?").get(id) as
-    | TaskRow
-    | undefined;
+export function getTask(id: string): Promise<TaskRow | undefined> {
+  return queryOne<TaskRow>("SELECT * FROM tasks WHERE id = $1", [id]);
 }
 
 export interface CreateTaskInput {
@@ -53,26 +53,25 @@ export interface CreateTaskInput {
   status?: TaskStatus;
 }
 
-export function createTask(input: CreateTaskInput): TaskRow {
+export async function createTask(input: CreateTaskInput): Promise<TaskRow> {
   const id = makeId("task");
   const createdAt = nowIso();
-  getDb()
-    .prepare(
-      `INSERT INTO tasks (id, team_id, title, description, assignee_id, status, due_date, created_by, created_at, updated_at)
-       VALUES (@id, @teamId, @title, @description, @assigneeId, @status, @dueDate, @createdBy, @createdAt, @createdAt)`
-    )
-    .run({
+  await query(
+    `INSERT INTO tasks (id, team_id, title, description, assignee_id, status, due_date, created_by, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
+    [
       id,
-      teamId: input.teamId,
-      title: input.title,
-      description: input.description ?? "",
-      assigneeId: input.assigneeId ?? null,
-      status: input.status ?? "todo",
-      dueDate: input.dueDate ?? null,
-      createdBy: input.createdBy,
+      input.teamId,
+      input.title,
+      input.description ?? "",
+      input.assigneeId ?? null,
+      input.status ?? "todo",
+      input.dueDate ?? null,
+      input.createdBy,
       createdAt,
-    });
-  return getTask(id)!;
+    ]
+  );
+  return (await getTask(id))!;
 }
 
 export interface UpdateTaskInput {
@@ -83,23 +82,22 @@ export interface UpdateTaskInput {
   dueDate?: string | null;
 }
 
-export function updateTask(id: string, input: UpdateTaskInput): TaskRow | undefined {
-  const current = getTask(id);
+export async function updateTask(id: string, input: UpdateTaskInput): Promise<TaskRow | undefined> {
+  const current = await getTask(id);
   if (!current) return undefined;
-  getDb()
-    .prepare(
-      `UPDATE tasks SET title = @title, description = @description, assignee_id = @assigneeId,
-        status = @status, due_date = @dueDate, updated_at = @updatedAt
-       WHERE id = @id`
-    )
-    .run({
+  await query(
+    `UPDATE tasks SET title = $1, description = $2, assignee_id = $3,
+      status = $4, due_date = $5, updated_at = $6
+     WHERE id = $7`,
+    [
+      input.title ?? current.title,
+      input.description ?? current.description,
+      input.assigneeId === undefined ? current.assignee_id : input.assigneeId,
+      input.status ?? current.status,
+      input.dueDate === undefined ? current.due_date : input.dueDate,
+      nowIso(),
       id,
-      title: input.title ?? current.title,
-      description: input.description ?? current.description,
-      assigneeId: input.assigneeId === undefined ? current.assignee_id : input.assigneeId,
-      status: input.status ?? current.status,
-      dueDate: input.dueDate === undefined ? current.due_date : input.dueDate,
-      updatedAt: nowIso(),
-    });
+    ]
+  );
   return getTask(id);
 }

@@ -6,10 +6,12 @@ import { listUserCompetencies } from "@/lib/db/repo/competencies";
 import { serializeUser, serializeUserCompetency } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
-  const competencies = listUserCompetencies(user.id);
+  const competencies = await listUserCompetencies(user.id);
   return ok({ ...serializeUser(user), competencies: competencies.map(serializeUserCompetency) });
 }
 
@@ -21,8 +23,8 @@ export async function PATCH(request: Request) {
   const parsed = updateProfileSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  updateUser(user.id, parsed.data);
-  logActivity({
+  await updateUser(user.id, parsed.data);
+  await logActivity({
     actorId: user.id,
     action: "profile.updated",
     entityType: "user",
@@ -30,7 +32,7 @@ export async function PATCH(request: Request) {
     metadata: { fields: Object.keys(parsed.data) },
   });
 
-  const updated = getUserById(user.id)!;
-  const competencies = listUserCompetencies(user.id);
+  const updated = (await getUserById(user.id))!;
+  const competencies = await listUserCompetencies(user.id);
   return ok({ ...serializeUser(updated), competencies: competencies.map(serializeUserCompetency) });
 }

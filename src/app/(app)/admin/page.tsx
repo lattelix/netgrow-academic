@@ -17,9 +17,9 @@ export default async function AdminPage() {
     return <ForbiddenState description="Раздел администрирования доступен только администратору." />;
   }
 
-  const shifts = listShifts();
-  const competencies = listCompetencies();
-  const users = listUsers();
+  const shifts = await listShifts();
+  const competencies = await listCompetencies();
+  const users = await listUsers();
 
   return (
     <div className="space-y-6">

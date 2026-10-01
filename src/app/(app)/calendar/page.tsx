@@ -24,21 +24,22 @@ export default async function CalendarPage() {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const activeShift = listShifts().find((s) => s.status === "active") ?? listShifts()[0];
+  const shifts = await listShifts();
+  const activeShift = shifts.find((s) => s.status === "active") ?? shifts[0];
   const events =
     user.role_code === "participant"
-      ? listEventsForUser(user.id)
+      ? await listEventsForUser(user.id)
       : activeShift
-        ? listEventsByShift(activeShift.id)
+        ? await listEventsByShift(activeShift.id)
         : [];
 
   const grouped = groupByDate(events);
   const canCreate = user.role_code === "organizer" || user.role_code === "admin";
   const teams =
     user.role_code === "organizer"
-      ? listTeamsForOrganizer(user.id)
+      ? await listTeamsForOrganizer(user.id)
       : user.role_code === "admin"
-        ? listAllTeams()
+        ? await listAllTeams()
         : [];
 
   return (

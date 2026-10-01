@@ -6,8 +6,10 @@ import { createCompetency, listCompetencies } from "@/lib/db/repo/competencies";
 import { serializeCompetency } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
-  return ok(listCompetencies().map(serializeCompetency));
+  return ok((await listCompetencies()).map(serializeCompetency));
 }
 
 export async function POST(request: Request) {
@@ -19,8 +21,8 @@ export async function POST(request: Request) {
   const parsed = createCompetencySchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const competency = createCompetency(parsed.data);
-  logActivity({
+  const competency = await createCompetency(parsed.data);
+  await logActivity({
     actorId: user.id,
     action: "competency.created",
     entityType: "competency",

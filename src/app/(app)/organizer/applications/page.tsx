@@ -25,7 +25,7 @@ export default async function OrganizerApplicationsPage({
   const sp = await searchParams;
   const status = (sp.status as ApplicationStatus | undefined) ?? "pending";
 
-  const applications = listApplications({
+  const applications = await listApplications({
     organizerId: actor.role === "organizer" ? user.id : undefined,
     status,
   });

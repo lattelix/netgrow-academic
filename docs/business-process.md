@@ -63,7 +63,7 @@ sequenceDiagram
   actor Participant as Участник
   actor Organizer as Организатор
   participant API as API (route handlers)
-  participant DB as SQLite
+  participant DB as PostgreSQL
 
   Participant->>API: POST /api/applications {projectId, message}
   API->>DB: получить проект, активные заявки, участников

@@ -19,17 +19,17 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const project = getProject(id);
+  const project = await getProject(id);
   if (!project) notFoundPage();
 
-  const competencies = listProjectCompetencies(id);
-  const team = getTeamByProject(id);
+  const competencies = await listProjectCompetencies(id);
+  const team = await getTeamByProject(id);
   const actor = toActorContext(user);
   const editable = canEditProject(actor, project.organizer_id);
 
   let applicationSection = null;
   if (user.role_code === "participant") {
-    const [myApplication] = listApplications({ projectId: id, applicantId: user.id });
+    const [myApplication] = await listApplications({ projectId: id, applicantId: user.id });
     if (myApplication && myApplication.status !== "withdrawn" && myApplication.status !== "rejected") {
       applicationSection = (
         <div className="space-y-2">

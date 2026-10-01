@@ -36,7 +36,7 @@ export default async function AnalyticsPage() {
     return <ForbiddenState description="Аналитика доступна организаторам и администратору." />;
   }
 
-  const summary = getAnalyticsSummary();
+  const summary = await getAnalyticsSummary();
   const totalProjects = summary.totalProjects || 1;
   const totalApplications = summary.applicationsByStatus.reduce((s, a) => s + a.count, 0) || 1;
   const totalTasks = summary.tasksByStatus.reduce((s, a) => s + a.count, 0) || 1;

@@ -1,10 +1,11 @@
--- NetGrow academic demo schema (SQLite)
+-- NetGrow academic demo schema (PostgreSQL)
 -- All identifiers are stable strings ("prefix_<slug or uuid>") so seed data reads clearly in the UI and in fixtures.
-
-PRAGMA foreign_keys = ON;
+-- Timestamps are stored as ISO-8601 UTC text (not TIMESTAMPTZ) so the application layer never has to
+-- convert driver-native date objects back to strings: every row read from the database already carries
+-- user-facing ISO strings, matching `nowIso()` in src/lib/db/ids.ts.
 
 CREATE TABLE IF NOT EXISTS roles (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   code TEXT NOT NULL UNIQUE CHECK (code IN ('participant', 'organizer', 'admin')),
   name TEXT NOT NULL
 );
@@ -16,7 +17,7 @@ CREATE TABLE IF NOT EXISTS shifts (
   start_date TEXT NOT NULL,
   end_date TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'active', 'completed')),
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -28,7 +29,7 @@ CREATE TABLE IF NOT EXISTS users (
   age_group TEXT CHECK (age_group IN ('9-11', '12-14', '15-17') OR age_group IS NULL),
   bio TEXT NOT NULL DEFAULT '',
   avatar_color TEXT NOT NULL DEFAULT '#2F6F5E',
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users (role_id);
@@ -39,7 +40,7 @@ CREATE TABLE IF NOT EXISTS competencies (
   name TEXT NOT NULL UNIQUE,
   category TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_competencies_category ON competencies (category);
@@ -49,7 +50,7 @@ CREATE TABLE IF NOT EXISTS user_competencies (
   user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   competency_id TEXT NOT NULL REFERENCES competencies (id) ON DELETE CASCADE,
   level INTEGER NOT NULL CHECK (level BETWEEN 1 AND 5),
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   UNIQUE (user_id, competency_id)
 );
 
@@ -66,8 +67,8 @@ CREATE TABLE IF NOT EXISTS projects (
   shift_id TEXT NOT NULL REFERENCES shifts (id) ON DELETE RESTRICT,
   organizer_id TEXT NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
   capacity INTEGER NOT NULL CHECK (capacity > 0),
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+  updated_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_projects_shift ON projects (shift_id);
@@ -95,7 +96,7 @@ CREATE TABLE IF NOT EXISTS applications (
   decision_note TEXT NOT NULL DEFAULT '',
   decided_by TEXT REFERENCES users (id) ON DELETE SET NULL,
   decided_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_applications_project ON applications (project_id);
@@ -111,7 +112,7 @@ CREATE TABLE IF NOT EXISTS teams (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL UNIQUE REFERENCES projects (id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
 CREATE TABLE IF NOT EXISTS team_members (
@@ -119,7 +120,7 @@ CREATE TABLE IF NOT EXISTS team_members (
   team_id TEXT NOT NULL REFERENCES teams (id) ON DELETE CASCADE,
   user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   role_in_team TEXT NOT NULL DEFAULT 'member' CHECK (role_in_team IN ('lead', 'member')),
-  joined_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  joined_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
   UNIQUE (team_id, user_id)
 );
 
@@ -135,8 +136,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'in_progress', 'done')),
   due_date TEXT,
   created_by TEXT NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+  updated_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_team ON tasks (team_id);
@@ -154,7 +155,7 @@ CREATE TABLE IF NOT EXISTS events (
   ends_at TEXT NOT NULL,
   location TEXT NOT NULL DEFAULT '',
   created_by TEXT NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_shift ON events (shift_id);
@@ -168,7 +169,7 @@ CREATE TABLE IF NOT EXISTS activity_log (
   entity_type TEXT NOT NULL,
   entity_id TEXT NOT NULL,
   metadata TEXT NOT NULL DEFAULT '{}',
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  created_at TEXT NOT NULL DEFAULT (to_char(timezone('utc', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_activity_log_entity ON activity_log (entity_type, entity_id);

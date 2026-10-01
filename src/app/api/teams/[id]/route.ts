@@ -6,6 +6,8 @@ import { getProject } from "@/lib/db/repo/projects";
 import { serializeProject, serializeTask, serializeTeam, serializeTeamMember } from "@/lib/api/serialize";
 import { canManageTeam } from "@/lib/domain/authorization";
 
+export const dynamic = "force-dynamic";
+
 interface Params {
   params: Promise<{ id: string }>;
 }
@@ -15,19 +17,19 @@ export async function GET(_request: Request, { params }: Params) {
   if (!user) return unauthorized();
 
   const { id } = await params;
-  const team = getTeam(id);
+  const team = await getTeam(id);
   if (!team) return notFound("Команда не найдена");
 
-  const project = getProject(team.project_id);
+  const project = await getProject(team.project_id);
   if (!project) return notFound("Проект не найден");
 
   const actor = toActorContext(user);
-  if (!isTeamMember(team.id, user.id) && !canManageTeam(actor, project.organizer_id)) {
+  if (!(await isTeamMember(team.id, user.id)) && !canManageTeam(actor, project.organizer_id)) {
     return forbidden();
   }
 
-  const members = listTeamMembers(team.id);
-  const tasks = listTasksByTeam(team.id);
+  const members = await listTeamMembers(team.id);
+  const tasks = await listTasksByTeam(team.id);
 
   return ok({
     ...serializeTeam(team),

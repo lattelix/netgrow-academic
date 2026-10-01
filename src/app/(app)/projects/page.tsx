@@ -36,7 +36,7 @@ export default async function ProjectsPage({
       ? [sp.competencyId]
       : [];
 
-  const projects = listProjects({
+  const projects = await listProjects({
     search: sp.search || undefined,
     direction: sp.direction || undefined,
     ageGroup: (sp.ageGroup as ProjectAgeGroup) || undefined,
@@ -44,8 +44,8 @@ export default async function ProjectsPage({
     competencyIds: competencyIds.length ? competencyIds : undefined,
   });
 
-  const directions = listDirections();
-  const competencies = listCompetencies();
+  const directions = await listDirections();
+  const competencies = await listCompetencies();
   const canCreate = canCreateProject(toActorContext(user));
 
   const hasFilters = Boolean(sp.search || sp.direction || sp.ageGroup || sp.status || competencyIds.length);

@@ -3,6 +3,8 @@ import { canViewAnalytics } from "@/lib/domain/authorization";
 import { forbidden, ok, unauthorized } from "@/lib/api/respond";
 import { listRecentActivity } from "@/lib/db/repo/activityLog";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
@@ -11,7 +13,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const limit = Number(searchParams.get("limit") ?? "20");
 
-  const items = listRecentActivity(Number.isFinite(limit) ? limit : 20);
+  const items = await listRecentActivity(Number.isFinite(limit) ? limit : 20);
   return ok(
     items.map((i) => ({
       id: i.id,

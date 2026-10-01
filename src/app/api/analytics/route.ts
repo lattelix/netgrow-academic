@@ -3,10 +3,12 @@ import { canViewAnalytics } from "@/lib/domain/authorization";
 import { forbidden, ok, unauthorized } from "@/lib/api/respond";
 import { getAnalyticsSummary } from "@/lib/db/repo/analytics";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
   if (!canViewAnalytics(toActorContext(user))) return forbidden();
 
-  return ok(getAnalyticsSummary());
+  return ok(await getAnalyticsSummary());
 }

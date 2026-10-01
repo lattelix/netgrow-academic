@@ -17,22 +17,22 @@ export default async function TeamWorkspacePage({ params }: { params: Promise<{ 
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const team = getTeam(id);
+  const team = await getTeam(id);
   if (!team) notFound();
 
-  const project = getProject(team.project_id);
+  const project = await getProject(team.project_id);
   if (!project) notFound();
 
   const actor = toActorContext(user);
-  const isMember = isTeamMember(id, user.id);
+  const isMember = await isTeamMember(id, user.id);
   const isManager = canCreateTask(actor, project.organizer_id);
 
   if (!isMember && !isManager) {
     return <ForbiddenState description="Просматривать рабочее пространство команды могут только её участники и организатор проекта." />;
   }
 
-  const members = listTeamMembers(id);
-  const tasks = listTasksByTeam(id);
+  const members = await listTeamMembers(id);
+  const tasks = await listTasksByTeam(id);
 
   return (
     <div className="space-y-6">
