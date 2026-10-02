@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { loginAs, switchAccount, DEMO_ACCOUNTS } from "./helpers";
 
 test.describe.serial("defense workflow", () => {
+  let taskCountsAfterAssignment: Record<string, number> = {};
   test("participant explores profile and catalog, submits an application", async ({ page }) => {
     await loginAs(page, DEMO_ACCOUNTS.participant.name);
     await expect(page.getByRole("heading", { name: /Здравствуйте, Мария/ })).toBeVisible();
@@ -55,18 +56,51 @@ test.describe.serial("defense workflow", () => {
     await page.getByRole("button", { name: "Создать задачу" }).click();
 
     await expect(page.getByText("Подготовить маршрут квеста")).toBeVisible();
+
+    const analyticsResponse = await page.request.get("/api/analytics");
+    expect(analyticsResponse.status()).toBe(200);
+    const analytics = (await analyticsResponse.json()) as {
+      tasksByStatus: { status: string; count: number }[];
+    };
+    taskCountsAfterAssignment = Object.fromEntries(
+      analytics.tasksByStatus.map((item) => [item.status, item.count])
+    );
   });
 
-  test("participant sees the updated dashboard and organizer analytics reflect the change", async ({ page }) => {
+  test("participant changes task status and dashboard plus organizer analytics reflect it", async ({ page }) => {
     await loginAs(page, DEMO_ACCOUNTS.participant.name);
 
     await expect(page.getByText("Экологический квест").first()).toBeVisible();
     await expect(page.getByText("Подготовить маршрут квеста")).toBeVisible();
 
+    await page.getByRole("link", { name: "Подготовить маршрут квеста" }).click();
+    const taskRow = page.getByRole("row").filter({ hasText: "Подготовить маршрут квеста" });
+    const status = taskRow.getByLabel("Статус задачи");
+    await status.selectOption("in_progress");
+    await expect(status).toHaveValue("in_progress");
+
+    await page.goto("/dashboard");
+    const taskItem = page.locator("li").filter({ hasText: "Подготовить маршрут квеста" });
+    await expect(taskItem.getByText("В работе", { exact: true })).toBeVisible();
+
     await switchAccount(page);
     await loginAs(page, DEMO_ACCOUNTS.organizer.name);
+
+    const analyticsResponse = await page.request.get("/api/analytics");
+    expect(analyticsResponse.status()).toBe(200);
+    const analytics = (await analyticsResponse.json()) as {
+      tasksByStatus: { status: string; count: number }[];
+    };
+    const taskCountsAfterStatusChange = Object.fromEntries(
+      analytics.tasksByStatus.map((item) => [item.status, item.count])
+    );
+    expect(taskCountsAfterStatusChange.todo ?? 0).toBe((taskCountsAfterAssignment.todo ?? 0) - 1);
+    expect(taskCountsAfterStatusChange.in_progress ?? 0).toBe(
+      (taskCountsAfterAssignment.in_progress ?? 0) + 1
+    );
+
     await page.getByRole("link", { name: "Аналитика" }).click();
     await expect(page.getByRole("heading", { name: "Аналитика" })).toBeVisible();
-    await expect(page.getByText("Проекты по статусу")).toBeVisible();
+    await expect(page.getByText("Задачи по статусу")).toBeVisible();
   });
 });
