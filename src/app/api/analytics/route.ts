@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
-  if (!canViewAnalytics(toActorContext(user))) return forbidden();
+  const actor = toActorContext(user);
+  if (!canViewAnalytics(actor)) return forbidden();
 
-  return ok(await getAnalyticsSummary());
+  return ok(await getAnalyticsSummary(actor));
 }

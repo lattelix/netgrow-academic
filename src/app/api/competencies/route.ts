@@ -5,6 +5,7 @@ import { createCompetencySchema } from "@/lib/validation/schemas";
 import { createCompetency, listCompetencies } from "@/lib/db/repo/competencies";
 import { serializeCompetency } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
+import { withTransaction } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
@@ -21,13 +22,16 @@ export async function POST(request: Request) {
   const parsed = createCompetencySchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const competency = await createCompetency(parsed.data);
-  await logActivity({
-    actorId: user.id,
-    action: "competency.created",
-    entityType: "competency",
-    entityId: competency.id,
-    metadata: { name: competency.name },
+  const competency = await withTransaction(async () => {
+    const competency = await createCompetency(parsed.data);
+    await logActivity({
+      actorId: user.id,
+      action: "competency.created",
+      entityType: "competency",
+      entityId: competency.id,
+      metadata: { name: competency.name },
+    });
+    return competency;
   });
   return ok(serializeCompetency(competency), 201);
 }

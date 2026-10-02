@@ -1,5 +1,5 @@
-import { getCurrentUser } from "@/lib/auth/session";
-import { listEventsForUser, listEventsByShift } from "@/lib/db/repo/events";
+import { getCurrentUser, toActorContext } from "@/lib/auth/session";
+import { listEventsForUser } from "@/lib/db/repo/events";
 import { listShifts } from "@/lib/db/repo/shifts";
 import { listTeamsForOrganizer, listAllTeams } from "@/lib/db/repo/teams";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
@@ -26,12 +26,10 @@ export default async function CalendarPage() {
 
   const shifts = await listShifts();
   const activeShift = shifts.find((s) => s.status === "active") ?? shifts[0];
-  const events =
-    user.role_code === "participant"
-      ? await listEventsForUser(user.id)
-      : activeShift
-        ? await listEventsByShift(activeShift.id)
-        : [];
+  // Role-scoped for every role (participant/organizer/admin); the active
+  // shift only narrows the result, it is never used to widen access via the
+  // unrestricted listEventsByShift.
+  const events = await listEventsForUser(toActorContext(user), activeShift?.id);
 
   const grouped = groupByDate(events);
   const canCreate = user.role_code === "organizer" || user.role_code === "admin";

@@ -5,6 +5,7 @@ import { updateShiftSchema } from "@/lib/validation/schemas";
 import { getShift, updateShift } from "@/lib/db/repo/shifts";
 import { serializeShift } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
+import { withTransaction } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
@@ -25,12 +26,15 @@ export async function PATCH(request: Request, { params }: Params) {
   const parsed = updateShiftSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const updated = await updateShift(id, parsed.data);
-  await logActivity({
-    actorId: user.id,
-    action: "shift.updated",
-    entityType: "shift",
-    entityId: id,
+  const updated = await withTransaction(async () => {
+    const updated = await updateShift(id, parsed.data);
+    await logActivity({
+      actorId: user.id,
+      action: "shift.updated",
+      entityType: "shift",
+      entityId: id,
+    });
+    return updated;
   });
   return ok(updated ? serializeShift(updated) : null);
 }

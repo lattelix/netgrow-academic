@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentUser, toActorContext } from "@/lib/auth/session";
 import { listApplications } from "@/lib/db/repo/applications";
 import { listTasksByAssignee } from "@/lib/db/repo/tasks";
 import { listEventsForUser } from "@/lib/db/repo/events";
@@ -10,6 +10,7 @@ import { listRecentActivity } from "@/lib/db/repo/activityLog";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/States";
+import type { ActorContext } from "@/lib/domain/authorization";
 import {
   APPLICATION_STATUS_LABELS,
   PROJECT_STATUS_LABELS,
@@ -29,13 +30,13 @@ function StatCard({ label, value, hint }: { label: string; value: string | numbe
   );
 }
 
-async function ParticipantDashboard({ userId }: { userId: string }) {
-  const applications = await listApplications({ applicantId: userId });
-  const tasks = await listTasksByAssignee(userId);
-  const events = (await listEventsForUser(userId))
+async function ParticipantDashboard({ actor }: { actor: ActorContext }) {
+  const applications = await listApplications({ applicantId: actor.userId });
+  const tasks = await listTasksByAssignee(actor.userId);
+  const events = (await listEventsForUser(actor))
     .filter((e) => new Date(e.starts_at) >= new Date())
     .slice(0, 3);
-  const teams = await listTeamsForUser(userId);
+  const teams = await listTeamsForUser(actor.userId);
 
   const activeApplications = applications.filter((a) => a.status === "pending" || a.status === "approved");
   const openTasks = tasks.filter((t) => t.status !== "done");
@@ -145,10 +146,10 @@ async function ParticipantDashboard({ userId }: { userId: string }) {
   );
 }
 
-async function OrganizerDashboard({ userId }: { userId: string }) {
-  const projects = await listProjects({ organizerId: userId });
-  const pending = await listApplications({ organizerId: userId, status: "pending" });
-  const activity = await listRecentActivity(6);
+async function OrganizerDashboard({ actor }: { actor: ActorContext }) {
+  const projects = await listProjects({ organizerId: actor.userId });
+  const pending = await listApplications({ organizerId: actor.userId, status: "pending" });
+  const activity = await listRecentActivity(actor, 6);
 
   return (
     <div className="space-y-6">
@@ -222,9 +223,9 @@ async function OrganizerDashboard({ userId }: { userId: string }) {
   );
 }
 
-async function AdminDashboard() {
-  const summary = await getAnalyticsSummary();
-  const activity = await listRecentActivity(6);
+async function AdminDashboard({ actor }: { actor: ActorContext }) {
+  const summary = await getAnalyticsSummary(actor);
+  const activity = await listRecentActivity(actor, 6);
 
   return (
     <div className="space-y-6">
@@ -263,6 +264,7 @@ async function AdminDashboard() {
 export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user) return null;
+  const actor = toActorContext(user);
 
   return (
     <div className="space-y-6">
@@ -274,9 +276,9 @@ export default async function DashboardPage() {
           {user.role_code === "admin" && "Общая сводка по информационной системе."}
         </p>
       </div>
-      {user.role_code === "participant" && <ParticipantDashboard userId={user.id} />}
-      {user.role_code === "organizer" && <OrganizerDashboard userId={user.id} />}
-      {user.role_code === "admin" && <AdminDashboard />}
+      {user.role_code === "participant" && <ParticipantDashboard actor={actor} />}
+      {user.role_code === "organizer" && <OrganizerDashboard actor={actor} />}
+      {user.role_code === "admin" && <AdminDashboard actor={actor} />}
     </div>
   );
 }

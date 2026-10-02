@@ -34,8 +34,9 @@ export async function POST(request: Request) {
   const user = await getUserById(parsed.data.userId);
   if (!user) return notFound("Демо-аккаунт не найден");
 
-  const store = await cookies();
-  store.set(SESSION_COOKIE, user.id, SESSION_COOKIE_OPTIONS);
+  // The session cookie is not part of the database transaction, so the audit
+  // record is written first: if it fails, the request fails before the
+  // cookie is set, rather than granting a session with no audit trail.
   await logActivity({
     actorId: user.id,
     action: "session.login",
@@ -44,13 +45,16 @@ export async function POST(request: Request) {
     metadata: { role: user.role_code },
   });
 
+  const store = await cookies();
+  store.set(SESSION_COOKIE, user.id, SESSION_COOKIE_OPTIONS);
+
   return ok({ user: serialize(user) });
 }
 
 export async function DELETE() {
   const user = await getCurrentUser();
-  const store = await cookies();
-  store.delete(SESSION_COOKIE);
+  // Same ordering as login: log before mutating the (non-transactional)
+  // cookie, so a logout is never silently unaudited.
   if (user) {
     await logActivity({
       actorId: user.id,
@@ -59,5 +63,7 @@ export async function DELETE() {
       entityId: user.id,
     });
   }
+  const store = await cookies();
+  store.delete(SESSION_COOKIE);
   return ok({ user: null });
 }

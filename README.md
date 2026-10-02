@@ -107,6 +107,7 @@ route handlers как единственная точка мутаций с Zod-
 | [`docs/algorithms.md`](docs/algorithms.md) | Алгоритмы приёма заявок и формирования команд |
 | [`docs/security.md`](docs/security.md) | Модель угроз, матрица авторизации, production-рекомендации |
 | [`docs/testing.md`](docs/testing.md) | Стратегия тестирования и трассировка на требования |
+| [`docs/audit-2026-10-02.md`](docs/audit-2026-10-02.md) | Исправления аудита доступа и атомарности, результаты регрессии |
 | [`docs/demo-script.md`](docs/demo-script.md) | Сценарий защиты на 4 минуты и восстановление после сбоя |
 | [`docs/progress.md`](docs/progress.md) | Журнал разработки: что сделано, какие команды выполнялись, блокеры |
 
