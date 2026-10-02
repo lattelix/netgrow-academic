@@ -43,6 +43,10 @@ export function getTask(id: string): Promise<TaskRow | undefined> {
   return queryOne<TaskRow>("SELECT * FROM tasks WHERE id = $1", [id]);
 }
 
+export function lockTaskRow(id: string): Promise<TaskRow | undefined> {
+  return queryOne<TaskRow>("SELECT * FROM tasks WHERE id = $1 FOR UPDATE", [id]);
+}
+
 export interface CreateTaskInput {
   teamId: string;
   title: string;
@@ -82,22 +86,32 @@ export interface UpdateTaskInput {
   dueDate?: string | null;
 }
 
-export async function updateTask(id: string, input: UpdateTaskInput): Promise<TaskRow | undefined> {
-  const current = await getTask(id);
-  if (!current) return undefined;
-  await query(
-    `UPDATE tasks SET title = $1, description = $2, assignee_id = $3,
-      status = $4, due_date = $5, updated_at = $6
-     WHERE id = $7`,
+export function updateTask(id: string, input: UpdateTaskInput): Promise<TaskRow | undefined> {
+  // Patch only fields explicitly supplied by the caller. This avoids a
+  // read-modify-write lost update when two requests change different fields.
+  return queryOne<TaskRow>(
+    `UPDATE tasks SET
+       title = CASE WHEN $1::boolean THEN $2 ELSE title END,
+       description = CASE WHEN $3::boolean THEN $4 ELSE description END,
+       assignee_id = CASE WHEN $5::boolean THEN $6 ELSE assignee_id END,
+       status = CASE WHEN $7::boolean THEN $8 ELSE status END,
+       due_date = CASE WHEN $9::boolean THEN $10 ELSE due_date END,
+       updated_at = $11
+     WHERE id = $12
+     RETURNING *`,
     [
-      input.title ?? current.title,
-      input.description ?? current.description,
-      input.assigneeId === undefined ? current.assignee_id : input.assigneeId,
-      input.status ?? current.status,
-      input.dueDate === undefined ? current.due_date : input.dueDate,
+      input.title !== undefined,
+      input.title ?? null,
+      input.description !== undefined,
+      input.description ?? null,
+      input.assigneeId !== undefined,
+      input.assigneeId ?? null,
+      input.status !== undefined,
+      input.status ?? null,
+      input.dueDate !== undefined,
+      input.dueDate ?? null,
       nowIso(),
       id,
     ]
   );
-  return getTask(id);
 }
