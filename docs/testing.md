@@ -20,8 +20,8 @@
 | ФТ-09, ФТ-10 (решение, команда и журнал в одной транзакции) | `src/lib/domain/__tests__/decision-route.test.ts` |
 | ФТ-10 (формирование команды при одобрении) | `e2e/defense-workflow.spec.ts` («organizer opens the resulting team workspace…») |
 | ФТ-11, безопасность (владение проектом) | `src/lib/domain/__tests__/authorization.test.ts`; `e2e/forbidden-mutation.spec.ts` |
-| ФТ-13, ФТ-14 (задачи, назначение, статус) | `e2e/defense-workflow.spec.ts` |
-| ФТ-16 (аналитика) | `e2e/defense-workflow.spec.ts` («…organizer analytics reflect the change») |
+| ФТ-13, ФТ-14 (задачи, назначение, статус) | `e2e/defense-workflow.spec.ts`; `followup-regressions.test.ts` (конкурентные PATCH) |
+| ФТ-16 (аналитика) | `e2e/defense-workflow.spec.ts` (статус задачи изменяется участником, затем проверяется агрегат организатора) |
 | ФТ-17 (администрирование, только admin) | `e2e/forbidden-mutation.spec.ts` («participant cannot access administration») |
 | НФТ-02, НФТ-03 (доступность, состояния) | `src/components/ui/__tests__/States.test.tsx`, `Button.test.tsx` |
 | Соответствие компетенций (алгоритм) | `src/lib/domain/__tests__/fit.test.ts` |
@@ -108,6 +108,13 @@ pnpm e2e
 production-сборка и **14 сценариев Playwright**. Добавлены тесты прямого чтения API,
 ролевых выборок аналитики/журнала/календаря и отката бизнес-мутаций при реальном сбое
 журнала. Отчёт и точная область проверки: [`audit-2026-10-02.md`](audit-2026-10-02.md).
+
+Перед merge добавлены ещё **2 PostgreSQL regression-теста**: запрет уменьшения capacity
+ниже фактического состава и конкурентное обновление разных полей одной задачи без
+lost-update. Существующий Playwright core-flow усилен сменой статуса задачи участником
+и проверкой изменения аналитики, поэтому число e2e-сценариев осталось 14. Новый head
+успешно собирается в Vercel Preview; полный локальный PostgreSQL-прогон после этих двух
+последних тестов в текущей сессии повторно не выполнялся.
 
 - Репозитории заявок, команд и журнала действий покрыты интеграционными тестами обработчика
   решения на PostgreSQL. Остальные репозитории не выделены в отдельные модульные тесты и
