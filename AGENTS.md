@@ -24,8 +24,9 @@ NetGrow is an information system for forming project teams and coordinating educ
 
 This copy of the project is a storage/runtime port of the original academic submission: synchronous
 `better-sqlite3` was replaced with asynchronous `pg` (node-postgres) so the app can run against a
-persistent, hosted PostgreSQL database (e.g. Neon) instead of a local SQLite file. Product behavior,
-routes, business rules, and the demo-account login are unchanged. The original SQLite edition used for
+persistent, hosted PostgreSQL database (e.g. Neon) instead of a local SQLite file. Routes and demo-account
+login are preserved; the online security audit additionally scopes organizer data and makes DB mutations
+and their audit records atomic. Consult docs/security.md for the current read permissions. The original SQLite edition used for
 the thesis defense is preserved separately and is out of scope here: do not read, copy from, or modify
 it, and do not regenerate or alter any thesis documents (Word, presentation, or signature files) from
 this repository.

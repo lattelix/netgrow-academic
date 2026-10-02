@@ -7,6 +7,7 @@ import { getProject } from "@/lib/db/repo/projects";
 import { createTask, listTasksByTeam } from "@/lib/db/repo/tasks";
 import { serializeTask } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
+import { withTransaction } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
@@ -35,24 +36,28 @@ export async function POST(request: Request, { params }: Params) {
     return badRequest("Исполнитель должен быть участником команды");
   }
 
-  const task = await createTask({
-    teamId,
-    title: parsed.data.title,
-    description: parsed.data.description,
-    assigneeId: parsed.data.assigneeId,
-    dueDate: parsed.data.dueDate,
-    status: parsed.data.status,
-    createdBy: user.id,
+  const { task, withDetails } = await withTransaction(async () => {
+    const task = await createTask({
+      teamId,
+      title: parsed.data.title,
+      description: parsed.data.description,
+      assigneeId: parsed.data.assigneeId,
+      dueDate: parsed.data.dueDate,
+      status: parsed.data.status,
+      createdBy: user.id,
+    });
+
+    await logActivity({
+      actorId: user.id,
+      action: "task.created",
+      entityType: "task",
+      entityId: task.id,
+      metadata: { teamId, title: task.title },
+    });
+
+    const [withDetails] = (await listTasksByTeam(teamId)).filter((t) => t.id === task.id);
+    return { task, withDetails };
   });
 
-  await logActivity({
-    actorId: user.id,
-    action: "task.created",
-    entityType: "task",
-    entityId: task.id,
-    metadata: { teamId, title: task.title },
-  });
-
-  const [withDetails] = (await listTasksByTeam(teamId)).filter((t) => t.id === task.id);
   return ok(withDetails ? serializeTask(withDetails) : task, 201);
 }

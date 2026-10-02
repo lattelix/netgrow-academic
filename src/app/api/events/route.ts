@@ -7,6 +7,7 @@ import { serializeEvent } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
 import { getTeam } from "@/lib/db/repo/teams";
 import { getProject } from "@/lib/db/repo/projects";
+import { withTransaction } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +18,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const shiftId = searchParams.get("shiftId") ?? undefined;
 
-  // `shiftId` only narrows the caller's own accessible event set (general
-  // events plus their own teams' events); it must never widen it to events
-  // of teams the caller isn't a member of, regardless of role.
-  const events = await listEventsForUser(user.id, shiftId);
+  // Role-scoped accessible event set: participants get general events plus
+  // events of teams they belong to; organizers get general events plus
+  // events of teams under projects they organize; admins get every event.
+  // `shiftId` only narrows that set further - it must never widen it.
+  const events = await listEventsForUser(toActorContext(user), shiftId);
   return ok(events.map(serializeEvent));
 }
 
@@ -38,17 +40,23 @@ export async function POST(request: Request) {
     if (!team) return notFound("Команда не найдена");
     const project = await getProject(team.project_id);
     if (!project || !canManageTeam(actor, project.organizer_id)) return forbidden();
+    if (project.shift_id !== parsed.data.shiftId) {
+      return badRequest("Смена события должна совпадать со сменой проекта команды");
+    }
   } else if (actor.role === "participant") {
     return forbidden("Только организатор или администратор может создавать общие события");
   }
 
-  const event = await createEvent({ ...parsed.data, createdBy: user.id });
-  await logActivity({
-    actorId: user.id,
-    action: "event.created",
-    entityType: "event",
-    entityId: event.id,
-    metadata: { title: event.title },
+  const event = await withTransaction(async () => {
+    const created = await createEvent({ ...parsed.data, createdBy: user.id });
+    await logActivity({
+      actorId: user.id,
+      action: "event.created",
+      entityType: "event",
+      entityId: created.id,
+      metadata: { title: created.title },
+    });
+    return created;
   });
 
   return ok(serializeEvent({ ...event, team_name: null }), 201);

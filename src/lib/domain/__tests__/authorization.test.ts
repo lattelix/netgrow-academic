@@ -7,6 +7,8 @@ import {
   canEditProject,
   canManageReferenceData,
   canManageTeam,
+  canListUsers,
+  canReadUser,
   canUpdateTask,
   canViewAnalytics,
   canWithdrawApplication,
@@ -18,6 +20,18 @@ const organizerOwner: ActorContext = { userId: "u-organizer-1", role: "organizer
 const organizerOther: ActorContext = { userId: "u-organizer-2", role: "organizer" };
 const admin: ActorContext = { userId: "u-admin", role: "admin" };
 const PROJECT_ORGANIZER_ID = "u-organizer-1";
+
+describe("user read permissions", () => {
+  it("reserves the directory for admins and individual profiles for self/admin", () => {
+    expect(canListUsers(admin)).toBe(true);
+    expect(canListUsers(participant)).toBe(false);
+    expect(canListUsers(organizerOwner)).toBe(false);
+    expect(canReadUser(admin, participant.userId)).toBe(true);
+    expect(canReadUser(participant, participant.userId)).toBe(true);
+    expect(canReadUser(participant, organizerOwner.userId)).toBe(false);
+    expect(canReadUser(organizerOwner, participant.userId)).toBe(false);
+  });
+});
 
 describe("canCreateProject", () => {
   it("allows organizers and admins, not participants", () => {

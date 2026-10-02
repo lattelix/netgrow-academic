@@ -9,12 +9,14 @@ import {
   getApplication,
   listApplications,
   type ApplicationFilter,
+  type ApplicationWithDetails,
 } from "@/lib/db/repo/applications";
 import { getProject } from "@/lib/db/repo/projects";
 import { serializeApplication } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
 import { isUniqueViolation } from "@/lib/db/pgErrors";
-import type { ApplicationStatus } from "@/lib/db/types";
+import { withTransaction } from "@/lib/db/client";
+import type { ApplicationRow, ApplicationStatus } from "@/lib/db/types";
 
 export const dynamic = "force-dynamic";
 
@@ -69,17 +71,30 @@ export async function POST(request: Request) {
     });
   }
 
-  let application;
+  let result: { application: ApplicationRow; withDetails: ApplicationWithDetails | undefined };
   try {
-    application = await createApplication({
-      projectId: project.id,
-      applicantId: user.id,
-      message: parsed.data.message,
+    result = await withTransaction(async () => {
+      const application = await createApplication({
+        projectId: project.id,
+        applicantId: user.id,
+        message: parsed.data.message,
+      });
+      await logActivity({
+        actorId: user.id,
+        action: "application.created",
+        entityType: "application",
+        entityId: application.id,
+        metadata: { projectId: project.id },
+      });
+      const withDetails = await getApplication(application.id);
+      return { application, withDetails };
     });
   } catch (err) {
     // The eligibility check above has a time-of-check/time-of-use gap under
     // concurrent double submission; the partial unique index is the real
-    // guard, so surface its violation as a controlled conflict, not a 500.
+    // guard. Letting the violation propagate out of withTransaction first
+    // rolls back the failed insert (and any log write); only then do we turn
+    // it into a controlled conflict response instead of a 500.
     if (isUniqueViolation(err)) {
       return conflict("Заявку нельзя подать", {
         reasons: [
@@ -93,14 +108,5 @@ export async function POST(request: Request) {
     throw err;
   }
 
-  await logActivity({
-    actorId: user.id,
-    action: "application.created",
-    entityType: "application",
-    entityId: application.id,
-    metadata: { projectId: project.id },
-  });
-
-  const withDetails = await getApplication(application.id);
-  return ok(withDetails ? serializeApplication(withDetails) : application, 201);
+  return ok(result.withDetails ? serializeApplication(result.withDetails) : result.application, 201);
 }

@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/repo/projects";
 import { serializeProject, serializeProjectCompetency } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
+import { withTransaction } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,9 @@ interface Params {
 }
 
 export async function GET(_request: Request, { params }: Params) {
+  const user = await getCurrentUser();
+  if (!user) return unauthorized();
+
   const { id } = await params;
   const project = await getProject(id);
   if (!project) return notFound("Проект не найден");
@@ -43,28 +47,32 @@ export async function PATCH(request: Request, { params }: Params) {
   const parsed = updateProjectSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const updated = await updateProject(id, {
-    title: parsed.data.title,
-    description: parsed.data.description,
-    direction: parsed.data.direction,
-    ageGroup: parsed.data.ageGroup,
-    capacity: parsed.data.capacity,
-    status: parsed.data.status,
-  });
-  if (parsed.data.competencies) {
-    await setProjectCompetencies(id, parsed.data.competencies);
-  }
+  const { updated, full, competencies } = await withTransaction(async () => {
+    const updated = await updateProject(id, {
+      title: parsed.data.title,
+      description: parsed.data.description,
+      direction: parsed.data.direction,
+      ageGroup: parsed.data.ageGroup,
+      capacity: parsed.data.capacity,
+      status: parsed.data.status,
+    });
+    if (parsed.data.competencies) {
+      await setProjectCompetencies(id, parsed.data.competencies);
+    }
 
-  await logActivity({
-    actorId: user.id,
-    action: "project.updated",
-    entityType: "project",
-    entityId: id,
-    metadata: { fields: Object.keys(parsed.data) },
+    await logActivity({
+      actorId: user.id,
+      action: "project.updated",
+      entityType: "project",
+      entityId: id,
+      metadata: { fields: Object.keys(parsed.data) },
+    });
+
+    const full = await getProject(id);
+    const competencies = await listProjectCompetencies(id);
+    return { updated, full, competencies };
   });
 
-  const full = await getProject(id);
-  const competencies = await listProjectCompetencies(id);
   return ok({
     ...(full ? serializeProject(full) : updated),
     competencies: competencies.map(serializeProjectCompetency),

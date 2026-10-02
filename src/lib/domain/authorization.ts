@@ -5,6 +5,14 @@ export interface ActorContext {
   role: RoleCode;
 }
 
+export function canListUsers(actor: ActorContext): boolean {
+  return actor.role === "admin";
+}
+
+export function canReadUser(actor: ActorContext, targetId: string): boolean {
+  return actor.role === "admin" || actor.userId === targetId;
+}
+
 export function canCreateProject(actor: ActorContext): boolean {
   return actor.role === "organizer" || actor.role === "admin";
 }

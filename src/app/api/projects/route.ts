@@ -11,11 +11,15 @@ import {
 } from "@/lib/db/repo/projects";
 import { serializeProject } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
+import { withTransaction } from "@/lib/db/client";
 import type { ProjectAgeGroup, ProjectStatus } from "@/lib/db/types";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const user = await getCurrentUser();
+  if (!user) return unauthorized();
+
   const { searchParams } = new URL(request.url);
   const filter: ProjectFilter = {
     direction: searchParams.get("direction") ?? undefined,
@@ -41,28 +45,32 @@ export async function POST(request: Request) {
   const parsed = createProjectSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const project = await createProject({
-    title: parsed.data.title,
-    description: parsed.data.description,
-    direction: parsed.data.direction,
-    ageGroup: parsed.data.ageGroup,
-    shiftId: parsed.data.shiftId,
-    organizerId: user.id,
-    capacity: parsed.data.capacity,
-    status: parsed.data.status,
-  });
-  if (parsed.data.competencies.length > 0) {
-    await setProjectCompetencies(project.id, parsed.data.competencies);
-  }
+  const { project, full } = await withTransaction(async () => {
+    const project = await createProject({
+      title: parsed.data.title,
+      description: parsed.data.description,
+      direction: parsed.data.direction,
+      ageGroup: parsed.data.ageGroup,
+      shiftId: parsed.data.shiftId,
+      organizerId: user.id,
+      capacity: parsed.data.capacity,
+      status: parsed.data.status,
+    });
+    if (parsed.data.competencies.length > 0) {
+      await setProjectCompetencies(project.id, parsed.data.competencies);
+    }
 
-  await logActivity({
-    actorId: user.id,
-    action: "project.created",
-    entityType: "project",
-    entityId: project.id,
-    metadata: { title: project.title },
+    await logActivity({
+      actorId: user.id,
+      action: "project.created",
+      entityType: "project",
+      entityId: project.id,
+      metadata: { title: project.title },
+    });
+
+    const full = await getProject(project.id);
+    return { project, full };
   });
 
-  const full = await getProject(project.id);
   return ok(full ? serializeProject(full) : project, 201);
 }

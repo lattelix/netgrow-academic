@@ -32,11 +32,12 @@ function Bar({ label, value, total, tone = "accent" }: { label: string; value: n
 export default async function AnalyticsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!canViewAnalytics(toActorContext(user))) {
+  const actor = toActorContext(user);
+  if (!canViewAnalytics(actor)) {
     return <ForbiddenState description="Аналитика доступна организаторам и администратору." />;
   }
 
-  const summary = await getAnalyticsSummary();
+  const summary = await getAnalyticsSummary(actor);
   const totalProjects = summary.totalProjects || 1;
   const totalApplications = summary.applicationsByStatus.reduce((s, a) => s + a.count, 0) || 1;
   const totalTasks = summary.tasksByStatus.reduce((s, a) => s + a.count, 0) || 1;

@@ -3,7 +3,7 @@
 // Regression coverage for the calendar access-control defect: GET /api/events
 // used to call the unrestricted `listEventsByShift` whenever `shiftId` was
 // supplied, leaking other teams' events. `shiftId` must only ever narrow the
-// caller's own accessible event set (general events + their own teams).
+// caller's role-scoped accessible set (general events + permitted teams).
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.hoisted(() => {
@@ -55,12 +55,13 @@ async function resetFixture() {
     `INSERT INTO users (id, full_name, email, role_id, shift_id) VALUES
        ('cal-user', 'Calendar User', 'cal-user@example.test', 1, 'cal-s1'),
        ('cal-organizer', 'Calendar Organizer', 'cal-organizer@example.test', 2, 'cal-s1'),
+       ('cal-other', 'Other Organizer', 'cal-other@example.test', 2, 'cal-s1'),
        ('cal-admin', 'Calendar Admin', 'cal-admin@example.test', 3, 'cal-s1')`
   );
   await pool.query(
     `INSERT INTO projects (id, title, direction, age_group, status, shift_id, organizer_id, capacity) VALUES
        ('cal-proj-own', 'Own project', 'Science', 'any', 'recruiting', 'cal-s1', 'cal-organizer', 5),
-       ('cal-proj-foreign', 'Foreign project', 'Science', 'any', 'recruiting', 'cal-s1', 'cal-organizer', 5)`
+       ('cal-proj-foreign', 'Foreign project', 'Science', 'any', 'recruiting', 'cal-s1', 'cal-other', 5)`
   );
   await pool.query(
     `INSERT INTO teams (id, project_id, name) VALUES
@@ -110,12 +111,21 @@ afterEach(() => {
 });
 
 describe("GET /api/events", () => {
-  it.each(["cal-organizer", "cal-admin"])("does not widen calendar access for %s", async (userId) => {
+  it.each([
+    { userId: "cal-organizer", expected: [EVENT_IDS.generalS1, EVENT_IDS.ownS1].sort() },
+    { userId: "cal-admin", expected: [EVENT_IDS.generalS1, EVENT_IDS.ownS1, EVENT_IDS.foreignS1].sort() },
+  ])("keeps shift filtering inside the role scope for $userId", async ({ userId, expected }) => {
     vi.mocked(getCurrentUser).mockResolvedValue((await getUserById(userId))!);
     const available = new Set(await idsOf(await request()));
     const filtered = await idsOf(await request("cal-s1"));
-    expect(filtered).toEqual([EVENT_IDS.generalS1]);
+    expect(filtered).toEqual(expected);
     expect(filtered.every((id) => available.has(id))).toBe(true);
+  });
+
+  it("does not inherit team-member access when acting as an organizer", async () => {
+    await getPool().query("INSERT INTO team_members (id, team_id, user_id) VALUES ('cal-tmem-organizer', 'cal-team-foreign', 'cal-organizer')");
+    vi.mocked(getCurrentUser).mockResolvedValue((await getUserById("cal-organizer"))!);
+    expect(await idsOf(await request("cal-s1"))).toEqual([EVENT_IDS.generalS1, EVENT_IDS.ownS1].sort());
   });
 
   it("rejects anonymous requests", async () => {

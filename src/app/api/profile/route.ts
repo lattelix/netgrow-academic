@@ -5,6 +5,7 @@ import { getUserById, updateUser } from "@/lib/db/repo/users";
 import { listUserCompetencies } from "@/lib/db/repo/competencies";
 import { serializeUser, serializeUserCompetency } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
+import { withTransaction } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
@@ -23,16 +24,20 @@ export async function PATCH(request: Request) {
   const parsed = updateProfileSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  await updateUser(user.id, parsed.data);
-  await logActivity({
-    actorId: user.id,
-    action: "profile.updated",
-    entityType: "user",
-    entityId: user.id,
-    metadata: { fields: Object.keys(parsed.data) },
+  const { updated, competencies } = await withTransaction(async () => {
+    await updateUser(user.id, parsed.data);
+    await logActivity({
+      actorId: user.id,
+      action: "profile.updated",
+      entityType: "user",
+      entityId: user.id,
+      metadata: { fields: Object.keys(parsed.data) },
+    });
+
+    const updated = (await getUserById(user.id))!;
+    const competencies = await listUserCompetencies(user.id);
+    return { updated, competencies };
   });
 
-  const updated = (await getUserById(user.id))!;
-  const competencies = await listUserCompetencies(user.id);
   return ok({ ...serializeUser(updated), competencies: competencies.map(serializeUserCompetency) });
 }

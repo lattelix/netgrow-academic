@@ -8,12 +8,15 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
-  if (!canViewAnalytics(toActorContext(user))) return forbidden();
+  const actor = toActorContext(user);
+  if (!canViewAnalytics(actor)) return forbidden();
 
   const { searchParams } = new URL(request.url);
   const limit = Number(searchParams.get("limit") ?? "20");
 
-  const items = await listRecentActivity(Number.isFinite(limit) ? limit : 20);
+  // listRecentActivity clamps to a finite, positive 1..100 range itself, so
+  // any non-numeric, negative, fractional, or oversized input is handled there.
+  const items = await listRecentActivity(actor, limit);
   return ok(
     items.map((i) => ({
       id: i.id,

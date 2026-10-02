@@ -7,6 +7,7 @@ import { getTeam, isTeamMember } from "@/lib/db/repo/teams";
 import { getProject } from "@/lib/db/repo/projects";
 import { serializeTask } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
+import { withTransaction } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
@@ -42,16 +43,21 @@ export async function PATCH(request: Request, { params }: Params) {
     return badRequest("Исполнитель должен быть участником команды");
   }
 
-  await updateTask(id, parsed.data);
+  const { withDetails, raw } = await withTransaction(async () => {
+    await updateTask(id, parsed.data);
 
-  await logActivity({
-    actorId: user.id,
-    action: "task.updated",
-    entityType: "task",
-    entityId: id,
-    metadata: { fields: Object.keys(parsed.data) },
+    await logActivity({
+      actorId: user.id,
+      action: "task.updated",
+      entityType: "task",
+      entityId: id,
+      metadata: { fields: Object.keys(parsed.data) },
+    });
+
+    const [withDetails] = (await listTasksByTeam(team.id)).filter((t) => t.id === id);
+    const raw = withDetails ? undefined : await getTask(id);
+    return { withDetails, raw };
   });
 
-  const [withDetails] = (await listTasksByTeam(team.id)).filter((t) => t.id === id);
-  return ok(withDetails ? serializeTask(withDetails) : await getTask(id));
+  return ok(withDetails ? serializeTask(withDetails) : raw);
 }

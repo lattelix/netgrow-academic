@@ -5,6 +5,7 @@ import { createShiftSchema } from "@/lib/validation/schemas";
 import { createShift, listShifts } from "@/lib/db/repo/shifts";
 import { serializeShift } from "@/lib/api/serialize";
 import { logActivity } from "@/lib/db/repo/activityLog";
+import { withTransaction } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
 
@@ -21,13 +22,16 @@ export async function POST(request: Request) {
   const parsed = createShiftSchema.safeParse(body);
   if (!parsed.success) return badRequest(parsed.error);
 
-  const shift = await createShift(parsed.data);
-  await logActivity({
-    actorId: user.id,
-    action: "shift.created",
-    entityType: "shift",
-    entityId: shift.id,
-    metadata: { name: shift.name },
+  const shift = await withTransaction(async () => {
+    const shift = await createShift(parsed.data);
+    await logActivity({
+      actorId: user.id,
+      action: "shift.created",
+      entityType: "shift",
+      entityId: shift.id,
+      metadata: { name: shift.name },
+    });
+    return shift;
   });
   return ok(serializeShift(shift), 201);
 }

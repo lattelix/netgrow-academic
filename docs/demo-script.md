@@ -4,7 +4,9 @@
 
 ```bash
 pnpm install
-pnpm db:reset   # гарантированно чистое, детерминированное состояние
+cp .env.example .env.local # настройте локальный PostgreSQL; не используйте облачную базу
+createdb netgrow
+ALLOW_DB_RESET=1 pnpm db:reset # только локальная демонстрационная база
 pnpm dev        # http://localhost:3000
 ```
 
@@ -49,7 +51,7 @@ pnpm dev        # http://localhost:3000
 одобрена не та заявка), достаточно выполнить в отдельном терминале:
 
 ```bash
-pnpm db:reset
+ALLOW_DB_RESET=1 pnpm db:reset
 ```
 
 и обновить страницу браузера (`F5`) — состояние данных полностью и детерминированно
@@ -65,11 +67,6 @@ Ctrl+C
 pnpm dev
 ```
 
-Полная переустановка окружения (крайний случай):
-
-```bash
-rm -rf node_modules data/netgrow.db
-pnpm install
-pnpm db:reset
-pnpm dev
-```
+Если проблема в зависимостях, выполните `pnpm install --frozen-lockfile` и повторите запуск.
+Не удаляйте и не сбрасывайте облачную базу при проблемах приложения. Для автономной защиты
+без отдельного PostgreSQL используйте сохранённую ветку `academic-sqlite` с её инструкциями.
